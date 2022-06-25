@@ -11,4 +11,5 @@
 :numbered:
 
 chapter_introduction/index
+chapter_tensor_program/index
 ```
