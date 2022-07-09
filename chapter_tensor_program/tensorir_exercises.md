@@ -200,12 +200,12 @@ def lnumpy_mm_relu_v2(A: np.ndarray, B: np.ndarray, C: np.ndarray):
             for j in range(128):
                 for k in range(128):
                     if k == 0:
-                        Y[i, j] = 0
+                        Y[n, i, j] = 0
                     Y[n, i, j] = Y[n, i, j] + A[n, i, k] * B[n, k, j]
     for n in range(16):
         for i in range(128):
             for j in range(128):
-                C[i, j] = max(Y[i, j], 0)
+                C[n, i, j] = max(Y[n, i, j], 0)
 ```
 
 ```python
