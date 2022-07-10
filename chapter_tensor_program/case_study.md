@@ -154,13 +154,11 @@ Y = np.empty((128, 128), dtype="float32")
 
 ```python
 # TensorIR
+for i, j, k in T.grid(128, 128, 128):
+# numpy
 for i in range(128):
     for j in range(128):
         for k in range(128):
-
-# numpy
-for i, j, k in T.grid(128, 128, 128):
-
 ```
 
 #### 计算块
