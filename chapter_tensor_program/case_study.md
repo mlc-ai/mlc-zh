@@ -13,6 +13,7 @@ python3 -m  pip install mlc-ai-nightly -f https://mlc.ai/wheels
 ![](../img/tensor_func_linear_rule.png)
 
 在开始今天这一节之前，让我们回忆机器学习编译过程的关键原则。大多数的机器学习编译可以被视为张量函数之间的变换。在接下来的内容中我们主要想回答的以下几个问题：
+
 - 什么是表示张量函数可能的抽象？
 - 什么是张量函数之间可能的变换？
 
@@ -86,6 +87,7 @@ np.testing.assert_allclose(c_mm_relu, c_np, rtol=1e-5)
 ```
 
 上面的示例代码展示了我们如何在**幕后**实现 `mm_relu`。当然，由于 Python 解释器，代码本身会运行得很慢。尽管如此，示例 NumPy 代码包含我们将在这些计算的实际实现中使用的所有可能元素。
+
 - 多维缓冲区（数组）。
 - 在数组维度上的循环。
 - 在循环下执行的计算语句。
@@ -197,8 +199,9 @@ vk = T.axis.reduce(128, k)
 ```
 
 这三行包含以下信息：
+
 - 定义了 `vi`、`vj`、`vk` 应被绑定到的位置（在本例中为 `i`、`j` 和 `k`）；
-- 声明了 `vi、``vj`、`vk` 的原始范围（`T.axis.spatial(128, i)` 中的 `128`）；
+- 声明了 `vi`、`vj`、`vk` 的原始范围（`T.axis.spatial(128, i)` 中的 `128`）；
 - 声明了块轴的属性（`spatial`, `reduce`）。
 
 我们一一浏览这些属性。首先，就边界关系而言，`vi = T.axis.spatial(128, i)` 有效地蕴含了 `vi = i`。`[axis_range]` 值提供了 `[block_axis]` 的预期范围。例如，`vi = T.axis.spatial(128, i)` 中的 `128` 表明 `vi` 应该在 `range(0, 128)` 中。
@@ -240,7 +243,9 @@ for i in range(127):
 # SSR means the properties of each axes are "spatial", "spatial", "reduce"
 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
 ```
-is equivalent to
+
+相当于
+
 ```python
 vi = T.axis.spatial(range_of_i, i)
 vj = T.axis.spatial(range_of_j, j)
@@ -324,6 +329,7 @@ class MyModuleWithTwoFunctions:
 #### 章节检查点
 
 到目前为止，我们一同看过了一个 TensorIR 程序示例，并涵盖了大部分元素，包括：
+
 - 参数和中间临时内存中的缓冲区声明；
 - For 循环迭代；
 - **块**和块轴属性。
@@ -361,6 +367,7 @@ np.testing.assert_allclose(c_mm_relu, c_np, rtol=1e-5)
 ```
 
 上面的代码块显示了 `mm_relu` 的一个稍微不同的变体。它与原始程序的不同是
+
 - 我们用两个循环 `j0` 和 `j1` 替换了 `j` 循环；
 - 迭代顺序略有变化。
 
