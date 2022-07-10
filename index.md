@@ -12,4 +12,5 @@
 
 chapter_introduction/index
 chapter_tensor_program/index
+chapter_end_to_end/index
 ```

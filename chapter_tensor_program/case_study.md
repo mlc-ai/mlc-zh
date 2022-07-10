@@ -10,7 +10,7 @@ python3 -m  pip install mlc-ai-nightly -f https://mlc.ai/wheels
 
 ### 序言
 
-![](../img/tensor_func_linear_rule.png)
+![](../img/tensor_func_linear_relu.png)
 
 在开始今天这一节之前，让我们回忆机器学习编译过程的关键原则。大多数的机器学习编译可以被视为张量函数之间的变换。在接下来的内容中我们主要想回答的以下几个问题：
 

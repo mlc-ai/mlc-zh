@@ -8,7 +8,8 @@ requirements = [
     'requests',
     'pandas',
     'sphinx',
-    'torch'
+    'torch',
+    'torchvision',
 ]
 
 setup(
