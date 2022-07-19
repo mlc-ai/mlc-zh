@@ -1,20 +1,20 @@
-# Automatic Program Optimization
+# 自动程序优化
 
-## Prelude
+## 前言
 
-In the past chapters, we learned about how to build primitive tensor functions and connect them to form end-to-end model executions. There are three primary types of abstractions we have used so far.
+在过去的章节中，我们学习了如何构建元张量函数并将它们连接起来以进行端到端的模型执行。到目前为止，我们使用了三种主要的抽象类型。
 
-- A computational graph view that drives the high-level executions.
-- Abstraction for primitive tensor functions.
-- Library function calls via environment function registration.
+- 驱动高层执行的计算图抽象，
+- 元张量函数的抽象，
+- 通过注册环境函数从而能被调用的库函数。
 
-All of these elements are encapsulated in an IRModule. Most of the MLC processes can be viewed as transformations among tensor functions.
+所有这些元素都封装在一个 IRModule 中。大多数 MLC 过程可以看作是张量函数之间的变换。
 
-There are many different ways to transform the same program. This chapter will discuss ways to automate some of the processes.
+有许多不同的方法可以变换同一个程序。本章将讨论自动化一些流程的方法。
 
-## Preparations
+## 准备工作
 
-To begin with, we will import necessary dependencies and create helper functions.
+首先，我们将导入必要的依赖项并创建辅助函数。
 
 ```{.python .input n=0}
 import tvm
@@ -39,9 +39,9 @@ def code2html(code):
     return "<style>%s</style>%s\n" % (formatter.get_style_defs(".highlight"), html)
 ```
 
-## Recap:  Transform  a Primitive Tensor Function.
+## 回顾：变换元张量函数
 
-Let us begin by reviewing what we did in our previous chapters -- transforming a single primitive tensor function.
+让我们首先回顾一下我们在前几章中所做的事情——变换单个元张量函数。
 
 ```{.python .input n=2}
 @tvm.script.ir_module
@@ -61,7 +61,7 @@ class MyModule:
                 C[vi, vj] = C[vi, vj] + A[vi, vk] * B[vk, vj]
 ```
 
-First, let us define a set of inputs and outputs for evaluation.
+首先，让我们定义一组用于测试评估的输入输出。
 
 ```{.python .input n=3}
 dtype = "float32"
@@ -70,7 +70,7 @@ b_np = np.random.rand(128, 128).astype(dtype)
 c_mm = a_np @ b_np
 ```
 
-We can build and run `MyModule` as follows.
+我们可以如下构建和运行 `MyModule`。
 
 ```{.python .input n=4}
 a_nd = tvm.nd.array(a_np)
@@ -82,7 +82,7 @@ f_timer_before = lib.time_evaluator("main", tvm.cpu())
 print("Time cost of MyModule: %.3f ms" % (f_timer_before(a_nd, b_nd, c_nd).mean * 1000))
 ```
 
-Next, we transform `MyModule` a bit by reorganizing the loop access pattern.
+接下来，我们通过重新组织循环访问模式来稍微变换 `MyModule`。
 
 ```{.python .input n=5}
 def schedule_mm(sch: tvm.tir.Schedule, jfactor=4):
@@ -100,7 +100,7 @@ sch = schedule_mm(sch)
 IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
-Then we can build and run the re-organized program.
+然后我们可以构建并运行重新组织后的程序。
 
 ```{.python .input n=7}
 lib = tvm.build(sch.mod, target="llvm")
@@ -108,9 +108,9 @@ f_timer_after = lib.time_evaluator("main", tvm.cpu())
 print("Time cost of MyModule=>schedule_mm: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 ```
 
-### Transformation Trace
+### 变换的历史轨迹
 
-Besides `sch.mod` field, another thing `tir.Schedule` offers is a trace  field that can be used to show the steps involved to get to the transformed module. We can print it out using the following code.
+除了 `sch.mod`，`tir.Schedule` 提供的另一个数据结构是**历史轨迹** (trace)，它包含了 IRModule 在变换过程中所涉及的步骤。我们可以使用以下代码将其打印出来。
 
 ```{.python .input n=8}
 print(sch.trace)
@@ -126,15 +126,15 @@ def schedule_mm(sch: tvm.tir.Schedule, jfactor=4):
     return sch
 ```
 
-The above trace aligns with the transformations we specified in `schedule_mm`. One thing to note is that the trace (plus the original program) gives us a way to completely re-derive the final output program. Let us keep that in mind; we will use trace throughout this chapter as another way to inspect the transformations.
+上面的历史轨迹与我们在 `schedule_mm` 中指定的变换一致。需要注意的一点是，历史轨迹加上原始程序一起，为我们提供了一种能够完全重新生成最终输出程序的方法。记住这一点，我们将在本章中使用历史轨迹作为检查变换的另一种方式。
 
-## Stochastic Schedule Transformation
+## 随机调度变换 (Stochastic Schedule Transformation)
 
-Up until now, we have specified every detail about what transformations we want to make on the original TensorIR program. Many of those choices are based on our understanding of the underlying environment, such as cache and hardware unit. 
+到目前为止，我们已经详细说明了我们想要对原始 TensorIR 程序进行哪些变换。其中许多选择基于我们对底层环境的理解，例如缓存和硬件单元。
 
-However, in practice, we may not be able to decide every detail accurately. Instead of doing so, we would like to specify **what are possible ways to transform the program, while leaving out some details**.
+然而，在实践中，我们可能无法准确地决定每一个细节。因而，我们想指定**什么是变换程序的可能方法，同时省略一些细节**。
 
-One natural way to achieve the goal is to add some stochastic (randomness) elements to our transformations. The following code does that.
+实现目标的一种自然方法是在我们的变换中添加一些随机元素。下面的代码就是这样做的。
 
 ```{.python .input n=10}
 def stochastic_schedule_mm(sch: tvm.tir.Schedule):
@@ -149,11 +149,11 @@ def stochastic_schedule_mm(sch: tvm.tir.Schedule):
 
 ![](../img/auto_prog_optim_stoch_sch_transformation.png)
 
-Let us compare `stochastic_schedule_mm` and `schedule_mm` side by side. We can find that the only difference is how to specify `j_factors`. In the case of `schedule_mm`, `j_factors` is passed in as a parameter specified by us. In the case of `stochastic_schedule_mm`, it comes from `sch.sample_perfect_tile`.
+让我们对比 `stochastic_schedule_mm` 和 `schedule_mm`。可以发现，它们唯一的区别是指定 `j_factors` 的方式。在 `schedule_mm` 中， `j_factors` 作为我们指定的参数传入。在 `stochastic_schedule_mm` 中，它来自 `sch.sample_perfect_tile`。
 
-As the name suggests, `sch.sample_perfect_tile` tries to draw random numbers to fill in `j_factors`. It samples factors such that they perfectly split the loop. For example, when the original loop size is `128`, possible ways to split the loop include: `[8, 16]`, `[32, 4]`, `[2, 64]` (note `8 * 16 = 32 * 4 = 2 * 64 = 128`). 
+顾名思义，`sch.sample_perfect_tile` 尝试使用随机数来作为 `j_factors` 的值。它在输入循环的长度的因子中进行采样，以便采样结果能完美地分割循环。例如，当原始循环长度为 `128` 时，拆分循环的可能方式包括：`[8, 16]`、`[32, 4]`、`[2, 64]`（注意 `8 * 16 = 32 * 4 = 2 * 64 = 128`）。
 
-Let us first try to see what is the effect of `stochastic_schedule_mm` by running the following code-block. Try to run the following code block multiple times and observe the outcome difference. You might find that the loop bound of `j_1` changes each time we run the code-block.
+我们首先通过运行以下代码块来尝试查看 `stochastic_schedule_mm` 的效果。尝试多次运行以下代码块并观察结果差异。你可能会发现每次运行代码块时， `j_1` 的循环边界都会发生变化。
 
 ```{.python .input n=11}
 sch = tvm.tir.Schedule(MyModule)
@@ -162,15 +162,15 @@ sch = stochastic_schedule_mm(sch)
 IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
-What is happening here is that each time we run `stochastic_schedule_mm` it draws a  different `j_factors` randomly. We can print out the trace of the latest one to see the decisions we made in sampling.
+这里发生的是，每次我们运行 `stochastic_schedule_mm` 时，它都会随机采样一组不同的 `j_factors`。我们可以打印出最新的历史轨迹，以查看我们在采样中做出的决定。
 
 ```{.python .input n=12}
 print(sch.trace)
 ```
 
-When we look at the trace, pay close attention to the `decision=[...]` part of `sample_perfect_tile`. They correspond to the value that the `sampling_perfect_tile` picked in our last call to `stochastic_schedule_mm`.
+当我们查看历史轨迹时，请密切注意 `sample_perfect_tile` 的 `decision=[...]` 部分。 它们对应于我们上次调用 `stochastic_schedule_mm` 时 `sampling_perfect_tile` 返回的值。
 
-As an alternative way to look at different samples of `stochastic_schedule_mm`, we can run the following block multiple times and look at the trace.
+作为查看 `stochastic_schedule_mm` 不同采样结果的另一种方法，我们可以多次运行以下代码块并查看历史轨迹。
 
 ```{.python .input n=13}
 sch = tvm.tir.Schedule(MyModule)
@@ -178,14 +178,14 @@ sch = stochastic_schedule_mm(sch)
 print(sch.trace)
 ```
 
-### Deep Dive into Stochastic Transformation
+### 深入研究随机变换
 
-Now let us take a deeper dive into what happened in stochastic schedule transformations. We can find that it is a simple generalization of the original deterministic transformations, with two additional elements:
+现在让我们更深入地研究随机调度变换中发生的事情。我们可以发现它是原始确定性变换的简单泛化，包含两个附加元素：
 
-- Random variables that come from `sample_perfect_tile` and other sampling operations that we did not cover in the example.
-- Schedule operations that take action depending on the random variables.
+- 来自 `sample_perfect_tile` 的随机变量和我们在示例中未涵盖的其他采样操作。
+- 利用随机变量进行的后续变换操作。
 
-Let us try to run the stochastic transformation step by step.
+让我们尝试逐步运行随机变换。
 
 ```{.python .input n=14}
 sch = tvm.tir.Schedule(MyModule)
@@ -198,40 +198,40 @@ j_factors = sch.sample_perfect_tile(loop=j, n=2)
 type(j_factors[0])
 ```
 
-Elements in the `j_factors` are not real integer numbers. Instead, they are **symbolic variables** that refer to a random variable being sampled. We can pass these variables to the transformation API to specify choices such as factor values. 
+`j_factors` 中的元素并不是实整数。相反，它们是指被采样的随机变量的**符号变量**。我们可以将这些变量传递给变换的 API 从而指定诸如因子值之类的选择。
 
 ```{.python .input n=16}
 print(sch.trace)
 ```
 
-The schedule trace keeps track of the choices of these symbolic variables in the `decisions` field. So follow-up steps will be able to look up these choices to decide how to split the loop.
+调度的历史轨迹在 `decisions` 字段中记录这些符号变量的选择。因此后续步骤将能够查找这些选择来决定如何拆分循环。
 
 ```{.python .input n=17}
 IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
-If we look at the code at the current time point, we can find that the module remains the same since we only sampled the random variables but have not yet made any transformation actions based on them.
+如果我们查看当前时间点的代码，我们可以发现 IRModule 保持不变，因为我们只对随机变量进行了采样，但还没有基于它们进行任何变换操作。
 
-Let us now take some of the actions:
+现在让我们采取一些行动：
 
 ```{.python .input n=18}
 j_0, j_1 = sch.split(loop=j, factors=j_factors)
 sch.reorder(i, j_0, k, j_1)
 ```
 
-These actions are recorded in the following trace.
+这些操作被记录在以下历史轨迹中。
 
 ```{.python .input n=19}
 print(sch.trace)
 ```
 
-If we retake a look at the code, the transformed module now corresponds to the updated versions after the actions are taken.
+如果我们重新查看代码，变换后的模块现在对应于执行操作后的更新版本。
 
 ```{.python .input n=20}
 IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
-We can do some further transformations to get to the final state.
+我们可以做一些进一步的变换以达到最终状态。
 
 ```{.python .input n=21}
 sch.reorder(i, j_0, k, j_1)
@@ -242,15 +242,15 @@ sch.decompose_reduction(block_C, k)
 IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
-## Search Over Stochastic Transformations
+## 随机变换搜索
 
-One thing that you might realize is that `stochastic_schedule_mm` create a **search space of possible programs** depending on the specific decisions made at each sampling step.
+你可能会意识到，`stochastic_schedule_mm` 创建了一个**可能程序的搜索空间**，具体取决于在每个采样步骤中做出的具体决定。
 
 ![](../img/auto_prog_optim_transformation_search.png)
 
-Coming back to our initial intuition, we want to be able to specify a set of **possible programs**  instead of one program. `stochastic_schedule_mm` did exactly that. Of course, one natural question to ask next is what is the best choice.
+回到我们最初的直觉，我们希望能够指定一组**可能的程序**而不是一个程序。 `stochastic_schedule_mm` 正是这样做的。当然，接下来要问的一个很自然的问题是：什么是最佳选择？
 
-We will need a search algorithm to do that. To show what can be done here, let us first try the most straightforward search algorithm -- random search, in the following code block. It tries to run `stochastic_schedule_mm` repetitively, gets a transformed module, runs benchmark, then book keep the best one in history.
+我们需要一个搜索算法来做到这一点。为了展示这里可以做什么，让我们首先在下面的代码块中尝试最直接的搜索算法——随机搜索。它尝试重复运行 `stochastic_schedule_mm`，获取转换后的模块，运行测试，然后保留历史上最好（用时最短）的模块。
 
 ```{.python .input n=23}
 def random_search(mod: tvm.IRModule, num_trials=5):
@@ -276,21 +276,21 @@ def random_search(mod: tvm.IRModule, num_trials=5):
 sch = random_search(MyModule)
 ```
 
-If we run the code, we can find that it goes over a few choices and then returns the best run throughout five trials.
+如果我们运行代码，我们会发现它经过了几个选择，然后在五次试验中返回了最佳运行。
 
 ```{.python .input n=24}
 print(sch.trace)
 ```
 
-In practice, we use smarter algorithms. We also need to provide additional utilities, such as benchmarking on remote devices, if we are interested in optimization for other devices. TVM's meta schedule  API provides these additional capabilities.
+在实践中，我们使用更智能的算法。如果我们对其他设备的优化感兴趣，我们还需要提供额外的工具，例如远程设备上的基准测试。 TVM 的 Meta-Schedule API 提供了这些附加功能。
 
-`meta_schedule` is the namespace that comes to support search over a space of possible transformations. There are many additional things that meta-schedule do behind the scene:
+`meta_schedule` 是支持搜索可能变换空间的命名空间。Meta-Schedule 在幕后做了很多额外的事情：
 
-- Parallel benchmarking across many processes.
-- Use cost models to avoid benchmarking each time.
-- Evolutionary search on the traces instead of randomly sampling at each time.
+- 跨越多个进程的并行基准测试。
+- 使用**代价模型** (cost model) 来避免每次都进行基准测试。
+- 基于历史轨迹进行**遗传搜索** (evolutionary search)，而不是每次都随机采样。
 
-Despite these magics, the key idea remains the same: **use stochastic transformation to specify a search space of good programs, `tune_tir` API helps to search and find an optimized solution within the search space**.
+尽管有这些工具，但我们关键思想是保持不变的：**使用随机变换来指定好的程序的搜索空间，使用 `tune_tir` API 帮助在搜索空间内搜索并找到最优的调度变换**。
 
 ```{.python .input n=25}
 from tvm import meta_schedule as ms
@@ -308,7 +308,7 @@ sch_tuned = ms.tune_tir(
 )
 ```
 
-`tune_tir` functions return an optimized schedule found during the tuning process.
+`tune_tir` 函数返回在调优过程中找到的优化后的调度。
 
 ```{.python .input n=26}
 print(sch_tuned.trace)
@@ -324,11 +324,11 @@ f_timer_after = lib.time_evaluator("main", tvm.cpu())
 print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 ```
 
-### Leverage Default AutoScheduling
+### 利用默认的自动调度
 
-In the last section, we showed how to tune a workload with stochastic transformations that we crafted. Metaschedule comes with its own built-in set of generic stochastic transformations that works for a broad set of TensorIR computations. This approach is also called auto-scheduling, as the search space is generated by the system. We can run it by removing the line `space=ms.space_generator.ScheduleFn(stochastic_schedule_mm)`.
+在上一节中，我们展示了如何使用我们精心设计的随机变换来优化 IRModule 的计算。Meta-Schedule 带有内置通用随机变换集合，能够适用于广泛的 TensorIR 计算。这种方法也称为**自动调度** (auto-scheduling)，因为搜索空间是由系统生成的。我们可以通过删除行 `space=ms.space_generator.ScheduleFn(stochastic_schedule_mm)` 来运行它。
 
-Under the hood, the meta-scheduler analyzes each block's data access and loop patterns and proposes stochastic transformations to the program. We won't go into these generic transformations in this chapter but want to note that they are also just stochastic transformations coupled with an analysis of the code. We can use the same mechanisms learned in the last section to enhance auto-scheduling. We will touch base on this topic in future chapters.
+在底层，Meta-Schedule 分析每个 TensorIR block 的数据访问和循环模式，并提出对程序的随机变换方式。我们不会在本章中讨论这些通用的变换，但要注意它们也只是随机转换加上代码分析而已。我们可以使用上一节中学到的相同机制来增强自动调度。我们将在以后的章节中触及这个主题。
 
 ```{.python .input n=29}
 sch_tuned = ms.tune_tir(
@@ -349,11 +349,11 @@ f_timer_after = lib.time_evaluator("main", tvm.cpu())
 print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 ```
 
-The result gets much faster than our original code. We can take a glimpse at the trace and the final code. For the purpose of this chapter, you do not need to understand all the transformations. At a high level, the trace involves:
+结果比我们的原始代码快得多。我们可以查看历史轨迹和最终代码。就本章而言，你不需要了解所有变换。在高层次的理解中，历史轨迹包含：
 
-- More levels of loop tiling transformations.
-- Vectorization of intermediate computations.
-- Parallelization and unrolling of loops.
+- 更多级的循环转换，
+- 中间计算的矢量化，
+- 并行化和循环展开。
 
 ```{.python .input n=31}
 sch_tuned.trace
@@ -363,21 +363,21 @@ sch_tuned.trace
 IPython.display.HTML(code2html(sch_tuned.mod.script()))
 ```
 
-### Section Checkpoint
+### 章节检查点
 
-Let us have a checkpoint about what we have learned so far.
+让我们对到目前为止所学的内容进行检查。
 
-- Stochastic schedule allow us to express "what are the possible transformations".
-- Metaschedule's `tune_tir` API helps to find a good solution within the space.
-- Metaschedule comes with a default built-in set of stochastic transformations that covers a broad range of search space.
+- 随机调度允许我们表示“可能的变换是什么”。
+- Meta-Schedule 的 `tune_tir` API 帮助我们在搜索空间内找到一个好的解决方案。
+- Meta-Schedule 带有一组默认的内置随机变换，涵盖了广泛的搜索空间。
 
-## Putting Things Back to End to End Model Execution
+## 回到端到端模型执行
 
-Up until now, we have learned to automate program optimization of a single tensor primitive function. How can we put it back and improve our end-to-end model execution?
+到目前为止，我们已经学会了自动优化单个元张量函数。我们如何才能把利用它改进我们的端到端模型执行？
 
-From the MLC perspective, the automated search is a modular step, and we just need to replace the original primitive function implementation with the new one provided by the tuned result.
+从 MLC 的角度来看，自动搜索是一个模块化的步骤，我们只需要用调优结果提供的新的元张量函数实现替换原始的元张量函数实现。
 
-We will reuse the two-layer MLP example from the last chapter.
+我们将重用上一章中的两层 MLP 示例。
 
 ```{.python .input n=33}
 import torchvision
@@ -408,7 +408,7 @@ plt.show()
 print("Class:", class_names[label[0]])
 ```
 
-We also download pre-packed model parameters that we will use in our examples.
+我们同样下载我们将在示例中使用的预训练模型参数。
 
 ```{.python .input n=35}
 # Hide outputs
@@ -417,7 +417,7 @@ We also download pre-packed model parameters that we will use in our examples.
 
 ![](../img/e2e_fashionmnist_mlp_model.png)
 
-As a reminder, the above figure shows the model of interest.
+提醒一下，上面的图展示了我们用到的模型。
 
 ```{.python .input n=36}
 import pickle as pkl
@@ -427,7 +427,7 @@ data_nd = tvm.nd.array(img.reshape(1, 784))
 nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
 ```
 
-Let us use a mixture module where most of the components call into environment function and also come with one TensorIR function `linear0`.
+让我们使用一个混合 IRModule。它其中大多数步骤都调用环境函数，同时带有一个 TensorIR 函数 `linear0`。
 
 ```{.python .input n=37}
 @tvm.script.ir_module
@@ -486,7 +486,7 @@ def lnumpy_relu(x: tvm.nd.NDArray,
     torch.maximum(x_torch, torch.Tensor([0.0]), out=out_torch)
 ```
 
-We can bind the parameters and see if it gives the correct prediction.
+我们可以绑定参数，看看它是否给出了正确的预测。
 
 ```{.python .input n=39}
 MyModuleWithParams = relax.transform.BindParams("main", nd_params)(MyModuleMixture)
@@ -502,7 +502,7 @@ pred_kind = np.argmax(nd_res.numpy(), axis=1)
 print("MyModuleWithParams Prediction:", class_names[pred_kind[0]])
 ```
 
-The following code evaluates the run time cost of the module before the transformation. Note that because this is a small model, the number can fluctuate a bit between runs, so we just need to read the overall magnitude.
+以下代码计算模块在变化前的运行时间。请注意，因为这是一个小模型，不同次运行之间数字可能会有所波动，所以我们只需要关注整体幅度。
 
 ```{.python .input n=41}
 ftimer = vm.module.time_evaluator("main", tvm.cpu(), number=100)
@@ -510,11 +510,11 @@ ftimer = vm.module.time_evaluator("main", tvm.cpu(), number=100)
 print("MyModuleWithParams time-cost: %g ms" % (ftimer(data_nd).mean * 1000))
 ```
 
-We are now ready to tune the `linear0`. Our overall process is summarized in the following diagram.
+我们现在准备好调整 `linear0`。下图总结了我们的整个流程。
 
 ![](../img/auto_prog_optim_optim_flow.png)
 
-Currently, tune API only takes an IRModule with one `main` function, so we first get the `linear0` out into another module's main function and pass it to tune
+目前，调优 API 只接受一个带有一个 `main` 函数的 IRModule，所以我们首先将 `linear0` 取出到另一个模块的 main 函数中并将其传递给 `tune_tir`。
 
 ```{.python .input n=42}
 mod_linear = tvm.IRModule.from_expr(MyModuleMixture["linear0"].with_attr("global_symbol", "main"))
@@ -534,7 +534,7 @@ sch_tuned_linear = ms.tune_tir(
 )
 ```
 
-Now we need to replace the original `linear0` with the new function after tuning. We can do that by first getting a `global_var`, a `pointer` reference to the functions inside the IRModule, then calling `update_func` to replace the function with the new one.
+现在我们需要在调优后用新函数替换原来的 `linear0`。我们可以通过首先获得一个 `global_var`（一个指向 IRModule 中函数的 `pointer` 引用），然后调用 `update_func` 来用新的函数替换原本的函数。
 
 ```{.python .input n=44}
 MyModuleWithParams2 = relax.transform.BindParams("main", nd_params)(MyModuleMixture)
@@ -544,7 +544,7 @@ MyModuleWithParams2.update_func(gv, new_func)
 IPython.display.HTML(code2html(MyModuleWithParams2.script()))
 ```
 
-We can find that the `linear0` has been replaced in the above code.
+我们可以发现上面代码中的 `linear0` 已经被替换了。
 
 ```{.python .input n=45}
 ex = relax.vm.build(MyModuleWithParams2, target="llvm")
@@ -556,7 +556,7 @@ pred_kind = np.argmax(nd_res.numpy(), axis=1)
 print("MyModuleWithParams2 Prediction:", class_names[pred_kind[0]])
 ```
 
-Running the code again, we can find that we get an observable amount of time reduction, mainly thanks to the new `linear0` function.
+再次运行代码，我们可以发现我们得到了明显的时间减少，这主要归功于新的 `linear0` 函数。
 
 ```{.python .input n=46}
 ftimer = vm.module.time_evaluator("main", tvm.cpu(), number=50)
@@ -564,18 +564,18 @@ ftimer = vm.module.time_evaluator("main", tvm.cpu(), number=50)
 print("MyModuleWithParams2 time-cost: %g ms" % (ftimer(data_nd).mean * 1000))
 ```
 
-## Discussions
+## 讨论
 
-We might notice that our previous two chapters focused on **abstraction** while this chapter starts to focus on  **transformation**. Stochastic transformations specify what can be possibly optimized without nailing down all the choices. The meta-schedule API helps us to search over the space of possible transformations and pick the best one.
+我们可能会注意到，我们前两章关注的是**抽象**，而本章开始关注**变换**。随机变换指定了可以优化的内容，而无需显式地确定所有选择。Meta-Schedule API 帮助我们搜索可能的变换空间并选择最佳变换。
 
-Importantly, putting the search result back into the end-to-end flow is just a matter of replacing the implementation of the original function with a new one that is informed by the tuning process. 
+重要的是，将搜索结果放回端到端流程只是将原始函数的实现替换为调优后的新函数的实现。
 
-So we again are following the generic MLC process in the figure below. In future lectures, we will introduce more kinds of transformations on primitive functions and computational graph functions. A good MLC process composes these transformations together to form an end deployment form.
+因此，我们再次遵循下图中的通用 MLC 流程。在以后的内容中，我们将介绍更多关于元张量函数和计算图函数的变换。一个好的 MLC 流程将这些变换组合在一起，形成最终部署的形式。
 
 ![](../img/mlc_process.png)
 
-## Summary
+## 概括
 
-- Stochastic transformations help us to specify a search space of possible programs.
-- MetaSchedule searches over the search space and finds an optimized one.
-- We can use another transformation to replace the primitive tensor function with optimized ones and an updated end-to-end execution flow.
+- 随机变换帮助我们指定可能程序的搜索空间。
+- Meta-Schedule 在搜索空间中搜索，并找到优化后的程序。
+- 我们可以使用另一种变换，将初始的元张量函数替换为优化后的函数，并更新的端到端执行流程。
