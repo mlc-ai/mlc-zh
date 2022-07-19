@@ -10,6 +10,7 @@ requirements = [
     'sphinx',
     'torch',
     'torchvision',
+    'xgboost==1.5',
 ]
 
 setup(
