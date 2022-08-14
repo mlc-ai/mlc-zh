@@ -2,7 +2,7 @@
 
 我们在过去的章节中讨论了为 CPU 和 GPU 环境构建机器学习编译流程。本节重点介绍我们如何为专门的硬件后端构建概念编程模型。
 
-## 准备工作
+### 准备工作
 
 首先，让我们导入必要的依赖项。
 
@@ -17,7 +17,7 @@ import numpy as np
 from __future__ import annotations 
 ```
 
-## 硬件专业化趋势
+### 硬件专业化趋势
 
 ![](../img/hardware_specialization.png)
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 最新的机器学习加速器引入了用于张量计算的专用单元，以及用于多维数据复制和矩阵/张量计算的指令。
 
-### 专业化代码中的关键要素
+#### 专业化代码中的关键要素
 
 为了帮助我们更好地理解专业硬件编程的元素，让我们首先研究以下 **low-level NumPy** 代码。 虽然这段代码仍然在 Python 中运行，但它类似于一组可能发生在专用硬件后端的操作。
 
@@ -80,7 +80,7 @@ lnumpy_tmm(a_np, b_np, c_np)
 np.testing.assert_allclose(c_np, c_tmm, rtol=1e-5)
 ```
 
-### 带有张量化计算的 block
+#### 带有张量化计算的 block
 
 我们的主要观察之一是专用加速器代码不是以标量计算为单位构建的。到目前为止，我们运行的大多数 TensorIR 代码都包含一个 block，用于计算输出张量中的单个元素。许多专门的加速器在张量区域上运行计算。 TensorIR 中的 block 结构帮助我们对此类相关计算进行分组。
 
@@ -138,7 +138,7 @@ lib["main"](a_nd, b_nd, c_nd)
 np.testing.assert_allclose(c_nd.numpy(), c_tmm, rtol=1e-5)
 ```
 
-### 变换在张量化 block 周围的循环
+#### 变换在张量化 block 周围的循环
 
 我们在这里可以做的一件事是变换张量计算 block 周围的循环。这些循环变换可以帮助我们重新组织周围的迭代方式，从而使得不同张量程序变体成为可能。
 
@@ -154,7 +154,7 @@ sch.reorder(i0, j, i1, k)
 sch.mod.show()
 ```
 
-### Blockization -- 创造新的 block
+#### Blockization -- 创造新的 block
 
 在大多数情况下，我们从带有标量计算的循环开始。 TensorIR 提供了一种变换原语 blockization 来将循环的子区域组合在一起以形成张量化的计算 block。
 
@@ -191,7 +191,7 @@ block_mm = sch.blockize(ii)
 sch.mod.show()
 ```
 
-### 变换 TensorIR 以引入特殊内存层级
+#### 变换 TensorIR 以引入特殊内存层级
 
 正如我们在低级 NumPy 代码中所指出的，之前低级 TensorIR 的一个关键元素是加速期间使用的特殊内存层级。
 
@@ -212,7 +212,7 @@ sch.mod.show()
 
 这里 `global.A_reg` 包含两个部分。 `global` 表示所有线程都可以全局访问内存，而 `A_reg` 是内存的**层级标签**，为后续编译映射到寄存器等特殊区域提供了机会。
 
-## 张量化
+### 张量化
 
 现在我们已经创建了一组映射到 TensorIR 中相应计算阶段的 block。 剩下的步骤是映射一些 block 以使用映射到硬件加速指令的特定实现。 此映射过程称为**张量化**。
 
@@ -323,7 +323,7 @@ lib["main"](a_nd, b_nd, c_nd)
 np.testing.assert_allclose(c_nd.numpy(), c_tmm, rtol=1e-5)
 ```
 
-## 讨论
+### 讨论
 
 本节介绍了一组专用硬件支持的关键元素。 这里的关键结构之一是张量化 block 和计算以及张量子区域。 TensorIR 还包含建立在基础元素之上的其他属性：
 
@@ -332,7 +332,7 @@ np.testing.assert_allclose(c_nd.numpy(), c_tmm, rtol=1e-5)
 
 我们没有足够的时间在一次讲座中涵盖这些内容，但我们将在一些附加内容上添加可选读物。
 
-## 小结
+### 小结
 
 - 硬件专业化向张量计算的总体趋势。
 - 带有张量化 block 的 TensorIR 变换。
