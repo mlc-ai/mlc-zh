@@ -2,7 +2,17 @@
 
 在上一章中，我们讨论了 CPU 环境中的 MLC 流程。本章节将讨论如何将一些优化带到 GPU 上。我们将使用 CUDA 编程语言。然而，同样的概念也适用于其他类型的 GPU。
 
-## 准备工作
+### 安装环境
+
+在本课程中，我们将使用 TVM 中正在进行的一些开发。在**第一部分**中，我们依赖于 CUDA 11 环境，因此需要安装特定的包。
+
+```bash
+python3 -m pip install mlc-ai-nightly-cu110 -f https://mlc.ai/wheels
+```
+
+**注意：我们目前的系统尚不支持 GPU，因此部分代码不会被运行。**
+
+### 准备工作
 
 首先，让我们导入必要的依赖项。
 
@@ -17,7 +27,7 @@ import numpy as np
 from __future__ import annotations
 ```
 
-## GPU 体系结构
+### GPU 体系结构
 
 让我们首先回顾一下 GPU 体系结构。典型的 GPU 包含一组流处理器 (stream multi-processors, SM)，每个流处理器都有许多核心。 GPU 设备是大规模并行的，允许我们同时执行许多任务。
 
@@ -53,7 +63,7 @@ i0, i1 = sch.split(i, [None, 128])
 sch.mod.show()
 ```
 
-### GPU 线程块
+#### GPU 线程块
 
 然后我们将迭代器绑定到 GPU 线程块。 每个线程由两个索引进行表示 - `threadIdx.x` 和 `blockIdx.x`。 在实际应用中，我们可以有多维线程索引，但这里我们为了简化问题，将它们固定为一维表示。
 
@@ -65,7 +75,7 @@ sch.bind(i1, "threadIdx.x")
 sch.mod.show()
 ```
 
-### 在 GPU 上构建和运行 TensorIR 函数
+#### 在 GPU 上构建和运行 TensorIR 函数
 
 我们可以在 GPU 上构建和测试生成的函数。
 
@@ -84,7 +94,7 @@ print(B_nd)
 print(C_nd)
 ```
 
-## 示例：窗口求和
+### 示例：窗口求和
 
 现在，让我们继续看另一个例子——窗口总和。 这个程序可以被视为具有预定义权重 `[1,1,1]` 的“卷积“的基本版本。 我们对输入进行滑动并将三个相邻值相加。
 
@@ -148,7 +158,7 @@ rt_mod = tvm.build(sch.mod, target="cuda")
 print(rt_mod.imported_modules[0].get_source())
 ```
 
-### 为其他 GPU 平台构建代码
+#### 为其他 GPU 平台构建代码
 
 MLC 过程通常支持针对多种硬件平台，我们可以通过改变目标参数来生成 Metal 代码（这是另一种 GPU 编程模型）。
 
@@ -157,7 +167,7 @@ rt_mod = tvm.build(sch.mod, target="metal")
 print(rt_mod.imported_modules[0].get_source())
 ```
 
-## 矩阵乘法
+### 矩阵乘法
 
 现在让我们来处理一些稍微复杂的事情，并尝试在 GPU 上优化矩阵乘法。 我们将介绍两种用于 GPU 性能优化的常用技术。
 
@@ -177,7 +187,7 @@ class MyModuleMatmul:
                 C[vi, vj] = C[vi, vj] + A[vi, vk] * B[vk, vj]
 ```
 
-### 本地存储分块 (Local Blocking)
+#### 本地存储分块 (Local Blocking)
 
 ![](../img/gpu_local_blocking.png)
 
@@ -233,7 +243,7 @@ evaluator = rt_mod.time_evaluator("main", dev, number=10)
 print("GEMM-Blocking: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean / 1e9))
 ```
 
-## 共享内存分块 (Shared Memory Blocking)
+### 共享内存分块 (Shared Memory Blocking)
 
 ![](../img/gpu_shared_blocking.png)
 
@@ -297,7 +307,7 @@ evaluator = rt_mod.time_evaluator("main", dev, number=10)
 print("GEMM-Blocking: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean / 1e9))
 ```
 
-## 利用自动程序优化
+### 利用自动程序优化
 
 到目前为止，我们一直在手动编写变换来优化 GPU 上的 TensorIR 程序。我们可以利用自动程序优化框架来调整相同的程序。下面的代码就是这样做的，我们这里设置了一个较小的搜索次数，可能需要几分钟才能完成。
 
@@ -325,7 +335,7 @@ evaluator = rt_mod.time_evaluator("main", dev, number=10)
 print("MetaSchedule: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean / 1e9))
 ```
 
-## 小结
+### 小结
 
 本章研究 MLC 的另一个纬度，即我们如何变换我们的程序以实现硬件加速。MLC 过程帮助我们将输入模型连接到不同的 GPU 编程模型和环境。 我们还将在接下来的章节中访问更多专业硬件加速主题。
 
