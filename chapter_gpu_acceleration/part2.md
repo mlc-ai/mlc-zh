@@ -65,7 +65,7 @@ def lnumpy_tmm(A: np.ndarray, B: np.ndarray, C: np.ndarray):
 
 在现实世界的硬件后端中，我们通常期望 `A_reg`、`B_reg` 和 `C_accumulator` 映射到硬件中的特殊内存区域（或寄存器）。这些被称为**特殊内存层级**。 此外，我们可以对这些设置执行一组有限的硬件加速操作。 诸如 `accel_tmm_add` 之类的操作可以映射到真正的硬件指令或供应商提供的高效内核函数实现。
 
-我们可以运行以下代码块来确认低级 numpy 代码是否正确运行。
+我们可以运行以下代码块来确认低级 NumPy 代码是否正确运行。
 
 ```{.python .input}
 dtype = "float32"
