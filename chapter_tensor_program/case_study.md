@@ -299,7 +299,7 @@ type(MyModule)
 type(MyModule["mm_relu"])
 ```
 
-到目前为止，我们只看到包含单个张量函数的 IRModules。 机器学习编译过程中的一个 IRModule 可以包含多个张量函数。 以下代码块显示了具有两个函数的 IRModule 示例。
+到目前为止，我们只看到包含单个张量函数的 IRModule。 机器学习编译过程中的一个 IRModule 可以包含多个张量函数。 以下代码块显示了具有两个函数的 IRModule 示例。
 
 ```{.python .input n=8}
 @tvm.script.ir_module
