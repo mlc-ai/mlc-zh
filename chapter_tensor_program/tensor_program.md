@@ -26,7 +26,7 @@
 ![元张量函数中的典型成分](../img/tensor_func_elements.png)
 :label:`fig_tensor_func_elements`
 
-我们称这类抽象为 ``张量程序抽象''。张量程序抽象的一个重要性质是，他们能够被一系列有效的程序变换所改变。
+我们称这类抽象为**张量程序抽象**。张量程序抽象的一个重要性质是，他们能够被一系列有效的程序变换所改变。
 
 ![一个元张量函数的序列变换](../img/tensor_func_seq_transform.png)
 :label:`fig_tensor_func_seq_transform`
