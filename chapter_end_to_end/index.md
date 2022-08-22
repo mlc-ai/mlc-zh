@@ -581,7 +581,7 @@ MyModuleWithParams = relax.transform.BindParams("main", nd_params)(MyModuleMixtu
 IPython.display.Code(MyModuleWithParams.script(), language="python")
 ```
 
-在上面的脚本中，`meta[relay.Constant][0]` （译者注：目前 `Relax` 的常量表达依然继承自 `Relay` ，未来改API可能会更改） 对应于一个存储常量的隐式字典（它没有显示为脚本的一部分，但仍然是 IRModule 的一部分）。 如果我们构建转换后的 IRModule，我们现在可以通过传入输入数据来调用该函数。
+在上面的脚本中，`meta[relay.Constant][0]` （译者注：目前 `Relax` 的常量表达依然继承自 `Relay` ，未来该 API 可能会更改） 对应于一个存储常量的隐式字典（它没有显示为脚本的一部分，但仍然是 IRModule 的一部分）。 如果我们构建转换后的 IRModule，我们现在可以通过传入输入数据来调用该函数。
 
 ```{.python .input n=22}
 ex = relax.vm.build(MyModuleWithParams, target="llvm")
