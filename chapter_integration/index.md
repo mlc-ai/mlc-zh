@@ -191,7 +191,7 @@ C = bb.emit_te(te_matmul, A, B).
 
 在幕后，`bb.emit_te` 做了以下事情：
 
-- 为 A 和 B 创建一个输入 `te.placeholder`，
+- 为 A 和 B 创建一个输入 `te.placeholder`。
 - 通过 `te_matmul` 函数运行它们。
 - 调用 `te.create_prim_func` 来创建一个 TensorIR 函数。
 - 通过 `call_tir` 生成对函数的调用。
@@ -501,7 +501,7 @@ MLPModuleHighLevel = from_fx(
 MLPModuleHighLevel.show()
 ```
 
-上面展示了我们使用那些内置的算子将模型导入为 IRModule 后的结果。这些内置算子是 **比 TensorIR 函数更高级别的抽象**。我们可以有不同的机会将这些原始算子进一步转换为库函数或 TensorIR 函数。
+上面展示了我们使用哪些内置的算子将模型导入为 IRModule 后的结果。这些内置算子是 **比 TensorIR 函数更高级别的抽象**。我们可以有不同的机会将这些原始算子进一步转换为库函数或 TensorIR 函数。
 
 在大多数情况下，在有高级算子支持的情况下，转换为高级内置函数会很有帮助。但是，有很多情况下我们找不到对应的高级内置算子或者想直接指定 TensorIR 函数。 在这些情况下，我们可以自定义翻译逻辑或变换从而生成 `call_tir` 或调用库函数。 通常，我们可以结合高级操作、TensorIR 和库抽象来获得最佳结果。 我们将在后续章节中讨论权衡取舍。
 
