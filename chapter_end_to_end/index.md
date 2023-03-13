@@ -175,63 +175,48 @@ print("Low-level Numpy MLP Prediction:", class_names[pred_kind[0]])
 @tvm.script.ir_module
 class MyModule:
     @T.prim_func
-    def relu0(X: T.Buffer[(1, 128), "float32"],
-              Y: T.Buffer[(1, 128), "float32"]):
-        # function attr dict
-        T.func_attr({"global_symbol": "relu0", "tir.noalias": True})
-        for i, j in T.grid(1, 128):
+    def relu0(x: T.handle, y: T.handle):
+        n = T.int64()
+        X = T.match_buffer(x, (1, n), "float32")
+        Y = T.match_buffer(y, (1, n), "float32")
+        for i, j in T.grid(1, n):
             with T.block("Y"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 Y[vi, vj] = T.max(X[vi, vj], T.float32(0))
 
     @T.prim_func
-    def linear0(X: T.Buffer[(1, 784), "float32"],
-                W: T.Buffer[(128, 784), "float32"],
-                B: T.Buffer[(128,), "float32"],
-                Z: T.Buffer[(1, 128), "float32"]):
-        T.func_attr({"global_symbol": "linear0", "tir.noalias": True})
-        Y = T.alloc_buffer((1, 128), "float32")
-        for i, j, k in T.grid(1, 128, 784):
+    def linear0(x: T.handle,
+                w: T.handle,
+                b: T.handle,
+                z: T.handle):
+        m, n, k = T.int64(), T.int64(), T.int64()
+        X = T.match_buffer(x, (1, m), "float32")
+        W = T.match_buffer(w, (n, m), "float32")
+        B = T.match_buffer(b, (n, ), "float32")
+        Z = T.match_buffer(z, (1, n), "float32")
+        Y = T.alloc_buffer((1, n), "float32")
+        for i, j, k in T.grid(1, n, m):
             with T.block("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + X[vi, vk] * W[vj, vk]
-
-        for i, j in T.grid(1, 128):
-            with T.block("Z"):
-                vi, vj = T.axis.remap("SS", [i, j])
-                Z[vi, vj] =  Y[vi, vj] + B[vj]
-
-    @T.prim_func
-    def linear1(X: T.Buffer[(1, 128), "float32"],
-                W: T.Buffer[(10, 128), "float32"],
-                B: T.Buffer[(10,), "float32"],
-                Z: T.Buffer[(1, 10), "float32"]):
-        T.func_attr({"global_symbol": "linear1", "tir.noalias": True})
-        Y = T.alloc_buffer((1, 10), "float32")
-        for i, j, k in T.grid(1, 10, 128):
-            with T.block("Y"):
-                vi, vj, vk = T.axis.remap("SSR", [i, j, k])
-                with T.init():
-                    Y[vi, vj] = T.float32(0)
-                Y[vi, vj] = Y[vi, vj] + X[vi, vk] * W[vj, vk]
-
-        for i, j in T.grid(1, 10):
+        for i, j in T.grid(1, n):
             with T.block("Z"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 Z[vi, vj] = Y[vi, vj] + B[vj]
 
     @R.function
-    def main(x: Tensor((1, 784), "float32"),
-             w0: Tensor((128, 784), "float32"),
-             b0: Tensor((128,), "float32"),
-             w1: Tensor((10, 128), "float32"),
-             b1: Tensor((10,), "float32")):
+    def main(x: R.Tensor((1, "m"), "float32"),
+             w0: R.Tensor(("n", "m"), "float32"),
+             b0: R.Tensor(("n", ), "float32"),
+             w1: R.Tensor(("k", "n"), "float32"),
+             b1: R.Tensor(("k", ), "float32")):
+        m, n, k = T.int64(), T.int64(), T.int64()
         with R.dataflow():
-            lv0 = R.call_tir(linear0, (x, w0, b0), (1, 128), dtype="float32")
-            lv1 = R.call_tir(relu0, (lv0,), (1, 128), dtype="float32")
-            out = R.call_tir(linear1, (lv1, w1, b1), (1, 10), dtype="float32")
+            lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+            lv1 = R.call_tir("relu0", lv0, R.Tensor((1, n), "float32"))
+            out = R.call_tir("linear0", (lv1, w1, b1), R.Tensor((1, k), "float32"))
             R.output(out)
         return out
 ```
@@ -259,7 +244,7 @@ class MyModule:
 您可能已经注意到的一件事是，计算图中的每个操作步骤都包含一个`R.call_tir`操作。 这是引入元张量函数的过程：
 
 ```python
-lv0 = R.call_tir(linear0, (x, w0, b0), (1, 128), dtype="float32")
+lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), dtype="float32"))
 ```
 
 为了解释 `R.call_tir` 的含义，让我们回顾一下操作的等效底层 NumPy 实现，如下所示：
@@ -345,9 +330,9 @@ Relax 函数中的另一个重要元素是 `R.dataflow()` 范围标注：
 
 ```python
 with R.dataflow():
-    lv0 = R.call_tir(linear0, (x, w0, b0), (1, 128), dtype="float32")
-    lv1 = R.call_tir(relu0, (lv0,), (1, 128), dtype="float32")
-    out = R.call_tir(linear1, (lv1, w1, b1), (1, 10), dtype="float32")
+    lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+    lv1 = R.call_tir("relu0", lv0, R.Tensor((1, n), "float32"))
+    out = R.call_tir("linear0", (lv1, w1, b1), R.Tensor((1, k), "float32"))
     R.output(out)
 ```
 
@@ -357,21 +342,20 @@ with R.dataflow():
 
 ```python
 @R.function
-def main(x: Tensor((1, 784), "float32"),
-         w0: Tensor((128, 784), "float32"),
-         b0: Tensor((128,), "float32"),
-         w1: Tensor((10, 128), "float32"),
-         b1: Tensor((10,), "float32")):
+def main(x: R.Tensor((1, "m"), "float32"),
+        w0: R.Tensor(("n", "m"), "float32"),
+        b0: R.Tensor(("n", ), "float32"),
+        w1: R.Tensor(("k", "n"), "float32"),
+        b1: R.Tensor(("k", ), "float32")):
+    m, n, k = T.int64(), T.int64(), T.int64()
 
     with R.dataflow():
-        lv0 = R.call_tir(linear0, (x, w0, b0), (1, 128), dtype="float32")
-        gv0 = R.call_tir(relu0, (lv0,), (1, 128), dtype="float32")
+        lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+        gv0 = R.call_tir("relu0", (lv0, ), R.Tensor((1, n), "float32"))
         R.output(gv0)
 
-    gv1 = R.alloc_tensor((1, 128), dtype="float32")
-
     with R.dataflow():
-        out = R.call_tir(linear1, (gv0, gv1, b0), (1, 128), dtype="float32")
+        out = R.call_tir("linear0", (gv0, w1, b1), R.Tensor((1, k), "float32"))
         R.output(out)
     return out
 ```
@@ -396,10 +380,10 @@ def main(x: Tensor((1, 784), "float32"),
 IPython.display.Code(MyModule.script(), language="python")
 ```
 
-我们调用 `relax.vm.build` 来构建这个函数。 注意：Relax 仍在开发中，因此某些 API 可能会更改。 不过，我们的主要目标是熟悉端到端模型的整体 MLC 流程（构造、转换、构建）。
+我们调用 `relax.build` 来构建这个函数。 注意：Relax 仍在开发中，因此某些 API 可能会更改。 不过，我们的主要目标是熟悉端到端模型的整体 MLC 流程（构造、转换、构建）。
 
 ```{.python .input n=11}
-ex = relax.vm.build(MyModule, target="llvm")
+ex = relax.build(MyModule, target="llvm")
 type(ex)
 ```
 
@@ -444,16 +428,17 @@ print("MyModule Prediction:", class_names[pred_kind[0]])
 @tvm.script.ir_module
 class MyModuleWithExternCall:
     @R.function
-    def main(x: Tensor((1, 784), "float32"),
-             w0: Tensor((128, 784), "float32"),
-             b0: Tensor((128,), "float32"),
-             w1: Tensor((10, 128), "float32"),
-             b1: Tensor((10,), "float32")):
+    def main(x: R.Tensor((1, "m"), "float32"),
+             w0: R.Tensor(("n", "m"), "float32"),
+             b0: R.Tensor(("n", ), "float32"),
+             w1: R.Tensor(("k", "n"), "float32"),
+             b1: R.Tensor(("k", ), "float32")):
         # block 0
+        m, n, k = T.int64(), T.int64(), T.int64()
         with R.dataflow():
-            lv0 = R.call_tir("env.linear", (x, w0, b0), (1, 128), dtype="float32")
-            lv1 = R.call_tir("env.relu", (lv0,), (1, 128), dtype="float32")
-            out = R.call_tir("env.linear", (lv1, w1, b1), (1, 10), dtype="float32")
+            lv0 = R.call_tir("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
+            lv1 = R.call_tir("env.relu", lv0, R.Tensor((1, n), "float32"))
+            out = R.call_tir("env.linear", (lv1, w1, b1), R.Tensor((1, k), "float32"))
             R.output(out)
         return out
 ```
@@ -461,7 +446,7 @@ class MyModuleWithExternCall:
 请注意，我们现在直接在 `call_tir` 中传入字符串：
 
 ```python
-R.call_tir("env.linear", (x, w0, b0), (1, 128), dtype="float32")
+R.call_tir("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
 ```
 
 这些字符串是我们期望在模型执行期间的运行时函数 (runtime function) 的名称。
@@ -502,7 +487,7 @@ def lnumpy_relu(x: tvm.nd.NDArray,
 现在我们可以构建并运行`MyModuleWithExternCall`，我们可以验证模型得到了相同的结果。
 
 ```{.python .input n=18}
-ex = relax.vm.build(MyModuleWithExternCall, target="llvm")
+ex = relax.build(MyModuleWithExternCall, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd,
@@ -524,34 +509,38 @@ print("MyModuleWithExternCall Prediction:", class_names[pred_kind[0]])
 @tvm.script.ir_module
 class MyModuleMixture:
     @T.prim_func
-    def linear0(X: T.Buffer[(1, 784), "float32"],
-                W: T.Buffer[(128, 784), "float32"],
-                B: T.Buffer[(128,), "float32"],
-                Z: T.Buffer[(1, 128), "float32"]):
-        T.func_attr({"global_symbol": "linear0", "tir.noalias": True})
-        Y = T.alloc_buffer((1, 128), "float32")
-        for i, j, k in T.grid(1, 128, 784):
+    def linear0(x: T.handle,
+                w: T.handle,
+                b: T.handle,
+                z: T.handle):
+        m, n, k = T.int64(), T.int64(), T.int64()
+        X = T.match_buffer(x, (1, m), "float32")
+        W = T.match_buffer(w, (n, m), "float32")
+        B = T.match_buffer(b, (n, ), "float32")
+        Z = T.match_buffer(z, (1, n), "float32")
+        Y = T.alloc_buffer((1, n), "float32")
+        for i, j, k in T.grid(1, n, m):
             with T.block("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + X[vi, vk] * W[vj, vk]
-
-        for i, j in T.grid(1, 128):
+        for i, j in T.grid(1, n):
             with T.block("Z"):
                 vi, vj = T.axis.remap("SS", [i, j])
-                Z[vi, vj] =  Y[vi, vj] + B[vj]
+                Z[vi, vj] = Y[vi, vj] + B[vj]
 
     @R.function
-    def main(x: Tensor((1, 784), "float32"),
-             w0: Tensor((128, 784), "float32"),
-             b0: Tensor((128,), "float32"),
-             w1: Tensor((10, 128), "float32"),
-             b1: Tensor((10,), "float32")):
+    def main(x: R.Tensor((1, "m"), "float32"),
+             w0: R.Tensor(("n", "m"), "float32"),
+             b0: R.Tensor(("n", ), "float32"),
+             w1: R.Tensor(("k", "n"), "float32"),
+             b1: R.Tensor(("k", ), "float32")):
+        m, n, k = T.int64(), T.int64(), T.int64()
         with R.dataflow():
-            lv0 = R.call_tir(linear0, (x, w0, b0), (1, 128), dtype="float32")
-            lv1 = R.call_tir("env.relu", (lv0,), (1, 128), dtype="float32")
-            out = R.call_tir("env.linear", (lv1, w1, b1), (1, 10), dtype="float32")
+            lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+            lv1 = R.call_tir("env.relu", (lv0, ), R.Tensor((1, n), "float32"))
+            out = R.call_tir("env.linear", (lv1, w1, b1), R.Tensor((1, k), "float32"))
             R.output(out)
         return out
 ```
@@ -559,7 +548,7 @@ class MyModuleMixture:
 上面的代码块显示了一个示例，其中 `linear0` 仍然在 `TensorIR` 中实现，而其余函数被重定向到库函数。 我们可以构建并运行以验证结果。
 
 ```{.python .input n=20}
-ex = relax.vm.build(MyModuleMixture, target="llvm")
+ex = relax.build(MyModuleMixture, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd,
@@ -584,7 +573,7 @@ IPython.display.Code(MyModuleWithParams.script(), language="python")
 在上面的脚本中，`meta[relay.Constant][0]` （译者注：目前 `Relax` 的常量表达依然继承自 `Relay` ，未来该 API 可能会更改） 对应于一个存储常量的隐式字典（它没有显示为脚本的一部分，但仍然是 IRModule 的一部分）。 如果我们构建转换后的 IRModule，我们现在可以通过传入输入数据来调用该函数。
 
 ```{.python .input n=22}
-ex = relax.vm.build(MyModuleWithParams, target="llvm")
+ex = relax.build(MyModuleWithParams, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd)
