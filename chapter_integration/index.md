@@ -133,8 +133,8 @@ te.create_prim_func([A, B, C, D]).show()
 让我们首先创建一个 block builder，它可以帮助我们逐步构建一个 `relax.Function`。
 
 ```{.python .input}
-A = relax.Var("A", (128, 128), relax.DynTensorType(2, "float32"))
-B = relax.Var("B", (128, 128), relax.DynTensorType(2, "float32"))
+A = relax.Var("A", relax.TensorStructInfo((128, 128), "float32"))
+B = relax.Var("B", relax.TensorStructInfo((128, 128), "float32"))
 ```
 
 我们通过创建 block builder 和一系列元张量函数来构造 Relax 函数。
@@ -274,9 +274,8 @@ fx_module.graph.print_tabular()
 
 ```{.python .input}
 def map_param(param: nn.Parameter):
-    ndim = len(param.data.shape)
     return relax.const(
-        param.data.cpu().numpy(), relax.DynTensorType(ndim, "float32")
+        param.data.cpu().numpy(), relax.TensorStructInfo(param.data.shape, "float32")
     )
 
 def fetch_attr(fx_mod, target: str):
@@ -306,7 +305,7 @@ def from_fx(fx_mod, input_shapes, call_function_map, call_module_map):
                     shape = input_shapes[input_index]
                     input_index += 1
                     input_var = relax.Var(
-                        node.target, shape, relax.DynTensorType(len(shape), "float32")
+                        node.target, relax.TensorStructInfo(shape, "float32")
                     )
                     fn_inputs.append(input_var)
                     node_map[node] = input_var
@@ -460,7 +459,7 @@ MLPModule.show()
 ```
 
 ```{.python .input}
-ex = relax.vm.build(MLPModule, target="llvm")
+ex = relax.build(MLPModule, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 data_nd = tvm.nd.array(img.reshape(1, 784))
 
@@ -477,15 +476,13 @@ print("MLPModule Prediction:", class_names[pred_kind[0]])
 ```{.python .input}
 def map_nn_relu_op(bb, node_map, node, nn_mod):
     A = node_map[node.args[0]]
-    return bb.emit(relax.op.relu(A))
+    return bb.emit(relax.op.nn.relu(A))
 
 def map_nn_linear_op(bb, node_map, node, nn_mod):
     x = node_map[node.args[0]]
     w = map_param(nn_mod.weight)
-    if nn_mod.bias is not None:
-        b = map_param(nn_mod.bias)
-    y = bb.emit(relax.op.dense(x, w))
-    return bb.emit(relax.op.add(y, b))
+    b = map_param(nn_mod.bias)
+    return bb.emit(relax.op.linear(x, w, b))
 
 MLPModuleHighLevel = from_fx(
     fx.symbolic_trace(mlp_model),
