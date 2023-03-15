@@ -43,9 +43,9 @@ from __future__ import annotations
 @tvm.script.ir_module
 class MyModuleVecAdd:
     @T.prim_func
-    def main(A: T.Buffer[(1024,), "float32"],
-             B: T.Buffer[(1024,), "float32"],
-             C: T.Buffer[(1024,), "float32"]) -> None:
+    def main(A: T.Buffer((1024,), "float32"),
+             B: T.Buffer((1024,), "float32"),
+             C: T.Buffer((1024,), "float32")) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i in T.grid(1024):
             with T.block("C"):
@@ -176,9 +176,9 @@ print(rt_mod.imported_modules[0].get_source())
 @tvm.script.ir_module
 class MyModuleMatmul:
     @T.prim_func
-    def main(A: T.Buffer[(1024, 1024), "float32"],
-             B: T.Buffer[(1024, 1024), "float32"],
-             C: T.Buffer[(1024, 1024), "float32"]) -> None:
+    def main(A: T.Buffer((1024, 1024), "float32"),
+             B: T.Buffer((1024, 1024), "float32"),
+             C: T.Buffer((1024, 1024), "float32")) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i, j, k in T.grid(1024, 1024, 1024):
             with T.block("C"):
@@ -318,13 +318,12 @@ from tvm import meta_schedule as ms
 sch_tuned = ms.tune_tir(
     mod=MyModuleMatmul,
     target="nvidia/tesla-p100",
-    config=ms.TuneConfig(
-      max_trials_global=64,
-      num_trials_per_iter=64,
-    ),
+    max_trials_global=64,
+    num_trials_per_iter=64,
     work_dir="./tune_tmp",
     task_name="main"
 )
+sch = ms.tir_integration.compile_tir(sch_tuned, MyModuleMatmul, "nvidia/tesla-p100")
 sch_tuned.mod.show()
 ```
 
