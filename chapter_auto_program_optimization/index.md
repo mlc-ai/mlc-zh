@@ -22,8 +22,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 import numpy as np
 from tvm import relax
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations 
 ```
 
 ```{.python .input n=1}
@@ -295,7 +293,7 @@ print(sch.trace)
 ```{.python .input n=25}
 from tvm import meta_schedule as ms
 
-sch_tuned = ms.tune_tir(
+database = ms.tune_tir(
     mod=MyModule,
     target="llvm --num-cores=1",
     max_trials_global=64,
@@ -305,7 +303,7 @@ sch_tuned = ms.tune_tir(
     task_name="main"
 )
 
-sch = ms.tir_integration.compile_tir(sch_tuned, MyModule, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
 ```
 
 `tune_tir` 函数返回在调优过程中找到的优化后的调度。
@@ -331,7 +329,7 @@ print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd,
 在底层，Meta-Schedule 分析每个 TensorIR block 的数据访问和循环模式，并提出对程序的随机变换方式。我们不会在本章中讨论这些通用的变换，但要注意它们也只是随机转换加上代码分析而已。我们可以使用上一节中学到的相同机制来增强自动调度。我们将在以后的章节中触及这个主题。
 
 ```{.python .input n=29}
-sch_tuned = ms.tune_tir(
+database = ms.tune_tir(
     mod=MyModule,
     target="llvm --num-cores=1",
     max_trials_global=64,
@@ -339,7 +337,7 @@ sch_tuned = ms.tune_tir(
     work_dir="./tune_tmp",
     task_name="main",
 )
-sch = ms.tir_integration.compile_tir(sch_tuned, MyModule, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
 ```
 
 ```{.python .input n=30}
@@ -521,7 +519,7 @@ IPython.display.HTML(code2html(mod_linear.script()))
 ```
 
 ```{.python .input n=43}
-sch_tuned_linear = ms.tune_tir(
+database = ms.tune_tir(
     mod=mod_linear,
     target="llvm --num-cores=1",
     max_trials_global=64,
@@ -529,7 +527,7 @@ sch_tuned_linear = ms.tune_tir(
     work_dir="./tune_tmp",
     task_name="main",
 )
-sch = ms.tir_integration.compile_tir(sch_tuned_linear, mod_linear, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, mod_linear, "llvm --num-cores=1")
 ```
 
 现在我们需要在调优后用新函数替换原来的 `linear0`。我们可以通过首先获得一个 `global_var`（一个指向 IRModule 中函数的 `pointer` 引用），然后调用 `update_func` 来用新的函数替换原本的函数。

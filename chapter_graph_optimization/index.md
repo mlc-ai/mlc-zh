@@ -11,9 +11,6 @@
 首先，让我们导入必要的依赖项。
 
 ```{.python .input}
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations
-
 import tvm
 from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
@@ -159,16 +156,16 @@ mlp_params = pkl.load(open("fasionmnist_mlp_params.pkl", "rb"))
 def create_model():
     bb = relax.BlockBuilder()
     x = relax.Var("x", relax.TensorStructInfo((1, 784), "float32"))
-    w0 = relax.const(mlp_params["w0"].T, "float32")
+    w0 = relax.const(mlp_params["w0"], "float32")
     b0 = relax.const(mlp_params["b0"], "float32")
-    w1 = relax.const(mlp_params["w1"].T, "float32")
+    w1 = relax.const(mlp_params["w1"], "float32")
     b1 = relax.const(mlp_params["b1"], "float32")
     with bb.function("main", [x]):
         with bb.dataflow():
-            lv0 = bb.emit(relax.op.matmul(x, w0))
+            lv0 = bb.emit(relax.op.matmul(x, relax.op.permute_dims(w0)))
             lv1 = bb.emit(relax.op.add(lv0, b0))
             lv2 = bb.emit(relax.op.nn.relu(lv1))
-            lv3 = bb.emit(relax.op.matmul(lv2, w1))
+            lv3 = bb.emit(relax.op.matmul(lv2, relax.op.permute_dims(w1)))
             lv4 = bb.emit(relax.op.add(lv3, b1))
             gv = bb.emit_output(lv4)
         bb.emit_func_output(gv)
@@ -314,11 +311,14 @@ def map_add(bb, call):
 def map_relu(bb, call):
     return bb.call_te(topi.nn.relu, call.args[0])
 
+def map_transpose(bb, call):
+    return bb.call_te(topi.transpose, call.args[0], )
 
 op_map = {
   "relax.matmul": map_matmul,
   "relax.add": map_add,
-  "relax.nn.relu": map_relu
+  "relax.nn.relu": map_relu,
+  "relax.permute_dims": map_transpose
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")

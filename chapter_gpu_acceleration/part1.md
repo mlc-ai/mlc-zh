@@ -22,9 +22,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 from tvm import relax
 import numpy as np
-
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations
 ```
 
 ### GPU 体系结构
@@ -315,7 +312,7 @@ print("GEMM-Blocking: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean 
 ```python
 from tvm import meta_schedule as ms
 
-sch_tuned = ms.tune_tir(
+database = ms.tune_tir(
     mod=MyModuleMatmul,
     target="nvidia/tesla-p100",
     max_trials_global=64,
@@ -323,12 +320,12 @@ sch_tuned = ms.tune_tir(
     work_dir="./tune_tmp",
     task_name="main"
 )
-sch = ms.tir_integration.compile_tir(sch_tuned, MyModuleMatmul, "nvidia/tesla-p100")
-sch_tuned.mod.show()
+sch = ms.tir_integration.compile_tir(database, MyModuleMatmul, "nvidia/tesla-p100")
+sch.mod.show()
 ```
 
 ```python
-rt_mod = tvm.build(sch_tuned.mod, target="nvidia/tesla-p100")
+rt_mod = tvm.build(sch.mod, target="nvidia/tesla-p100")
 dev = tvm.cuda(0)
 evaluator = rt_mod.time_evaluator("main", dev, number=10)
 

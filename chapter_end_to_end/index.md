@@ -21,8 +21,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 import numpy as np
 from tvm import relax
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations
 import IPython
 ```
 
