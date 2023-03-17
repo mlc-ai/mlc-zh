@@ -212,9 +212,9 @@ class MyModule:
              b1: R.Tensor(("k", ), "float32")):
         m, n, k = T.int64(), T.int64(), T.int64()
         with R.dataflow():
-            lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
-            lv1 = R.call_tir("relu0", lv0, R.Tensor((1, n), "float32"))
-            out = R.call_tir("linear0", (lv1, w1, b1), R.Tensor((1, k), "float32"))
+            lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+            lv1 = R.call_dps_packed("relu0", (lv0, ), R.Tensor((1, n), "float32"))
+            out = R.call_dps_packed("linear0", (lv1, w1, b1), R.Tensor((1, k), "float32"))
             R.output(out)
         return out
 ```
@@ -237,28 +237,28 @@ class MyModule:
 
 我们在之前的课程中已经看到了这种可视化。 图本身可以看作是一种抽象，在机器学习框架中通常称为**计算图 (computational graph)**。
 
-### `call_tir`
+### `call_dps_packed`
 
-您可能已经注意到的一件事是，计算图中的每个操作步骤都包含一个`R.call_tir`操作。 这是引入元张量函数的过程：
+您可能已经注意到的一件事是，计算图中的每个操作步骤都包含一个`R.call_dps_packed`操作。 这是引入元张量函数的过程：
 
 ```python
-lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), dtype="float32"))
+lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, n), dtype="float32"))
 ```
 
-为了解释 `R.call_tir` 的含义，让我们回顾一下操作的等效底层 NumPy 实现，如下所示：
+为了解释 `R.call_dps_packed` 的含义，让我们回顾一下操作的等效底层 NumPy 实现，如下所示：
 
 ```{.python .input n=8}
-def lnumpy_call_tir(prim_func, inputs, shape, dtype):
+def lnumpy_call_dps_packed(prim_func, inputs, shape, dtype):
     res = np.empty(shape, dtype=dtype)
     prim_func(*inputs, res)
     return res
 ```
 
-具体来说，`call_tir` 接受一个元函数 (`prim_func`) 的输入列表，并分配一个输出张量`res`，然后将输入和输出传递给`prim_func`。 执行 `prim_func` 后，结果会填充到 `res` 中，然后我们可以返回结果。
+具体来说，`call_dps_packed` 接受一个元函数 (`prim_func`) 的输入列表，并分配一个输出张量`res`，然后将输入和输出传递给`prim_func`。 执行 `prim_func` 后，结果会填充到 `res` 中，然后我们可以返回结果。
 
-请注意，`lnumpy_call_tir` 只是一个参考实现，以显示 `R.call_tir` 的含义。 在实际应用中，可以有不同的底层方法来优化执行。 例如，我们可能会选择提前分配所有输出内存，然后运行，我们将在以后的课程中介绍。
+请注意，`lnumpy_call_dps_packed` 只是一个参考实现，以显示 `R.call_dps_packed` 的含义。 在实际应用中，可以有不同的底层方法来优化执行。 例如，我们可能会选择提前分配所有输出内存，然后运行，我们将在以后的课程中介绍。
 
-一个很自然的问题：为什么我们需要 `call_tir`？ 这是因为我们的元张量函数采用以下调用约定：
+一个很自然的问题：为什么我们需要 `call_dps_packed`？ 这是因为我们的元张量函数采用以下调用约定：
 
 ```python
 def low_level_prim_func(in0, in1, ..., out):
@@ -294,22 +294,22 @@ def lnumpy_mlp(data, w0, b0, w1, b1):
 
 当然，我们仍然可以通过引入输入边和输出边来概括图定义，这会使抽象的定义和变换复杂化。
 
-所以回到`call_tir`，这里的关键思想是我们想要隐藏可能的分配或对函数的显式写入。 用更正式的术语来说，我们希望函数是 **pure** 或 **side-effect free**。（译者注：“pure”和“side-effect”是 PL 中的术语，译者不确定中文的准确名称，故不进行翻译。欢迎社区中的专业人士参与完善）
+所以回到`call_dps_packed`，这里的关键思想是我们想要隐藏可能的分配或对函数的显式写入。 用更正式的术语来说，我们希望函数是 **pure** 或 **side-effect free**。（译者注：“pure”和“side-effect”是 PL 中的术语，译者不确定中文的准确名称，故不进行翻译。欢迎社区中的专业人士参与完善）
 
 如果一个函数只从其输入中读取并通过其输出返回结果，它不会改变程序的其他部分（例如递增全局计数器），那么它是**pure**或**side-effect free**的。
 
-**call_tir** 使我们能够隐藏调用低层元函数细节，并将它们应用到计算图中。
+**call_dps_packed** 使我们能够隐藏调用低层元函数细节，并将它们应用到计算图中。
 
-我们还可以在底层 NumPy 中看到 `call_tir` 的作用。 现在我们已经定义了 `lnumpy_call_tir`，我们可以将底层 NumPy 代码重写为：
+我们还可以在底层 NumPy 中看到 `call_dps_packed` 的作用。 现在我们已经定义了 `lnumpy_call_dps_packed`，我们可以将底层 NumPy 代码重写为：
 
 ```{.python .input n=9}
-def lnumpy_mlp_with_call_tir(data, w0, b0, w1, b1):
-    lv0 = lnumpy_call_tir(lnumpy_linear0, (data, w0, b0), (1, 128), dtype="float32")
-    lv1 = lnumpy_call_tir(lnumpy_relu0, (lv0, ), (1, 128), dtype="float32")
-    out = lnumpy_call_tir(lnumpy_linear1, (lv1, w1, b1), (1, 10), dtype="float32")
+def lnumpy_mlp_with_call_dps_packed(data, w0, b0, w1, b1):
+    lv0 = lnumpy_call_dps_packed(lnumpy_linear0, (data, w0, b0), (1, 128), dtype="float32")
+    lv1 = lnumpy_call_dps_packed(lnumpy_relu0, (lv0, ), (1, 128), dtype="float32")
+    out = lnumpy_call_dps_packed(lnumpy_linear1, (lv1, w1, b1), (1, 10), dtype="float32")
     return out
 
-result = lnumpy_mlp_with_call_tir(
+result = lnumpy_mlp_with_call_dps_packed(
     img.reshape(1, 784),
     mlp_params["w0"],
     mlp_params["b0"],
@@ -320,7 +320,7 @@ pred_kind = np.argmax(result, axis=1)
 print("Low-level Numpy with CallTIR Prediction:", class_names[pred_kind[0]])
 ```
 
-实际上，最底层的实现会有显式的内存分配，所以`call_tir`主要是为了让我们在生成实际实现之前继续做一些高层的转换。
+实际上，最底层的实现会有显式的内存分配，所以`call_dps_packed`主要是为了让我们在生成实际实现之前继续做一些高层的转换。
 
 ### Dataflow Block
 
@@ -328,9 +328,9 @@ Relax 函数中的另一个重要元素是 `R.dataflow()` 范围标注：
 
 ```python
 with R.dataflow():
-    lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
-    lv1 = R.call_tir("relu0", lv0, R.Tensor((1, n), "float32"))
-    out = R.call_tir("linear0", (lv1, w1, b1), R.Tensor((1, k), "float32"))
+    lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+    lv1 = R.call_dps_packed("relu0", (lv0, ), R.Tensor((1, n), "float32"))
+    out = R.call_dps_packed("linear0", (lv1, w1, b1), R.Tensor((1, k), "float32"))
     R.output(out)
 ```
 
@@ -348,12 +348,12 @@ def main(x: R.Tensor((1, "m"), "float32"),
     m, n, k = T.int64(), T.int64(), T.int64()
 
     with R.dataflow():
-        lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
-        gv0 = R.call_tir("relu0", (lv0, ), R.Tensor((1, n), "float32"))
+        lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+        gv0 = R.call_dps_packed("relu0", (lv0, ), R.Tensor((1, n), "float32"))
         R.output(gv0)
 
     with R.dataflow():
-        out = R.call_tir("linear0", (gv0, w1, b1), R.Tensor((1, k), "float32"))
+        out = R.call_dps_packed("linear0", (gv0, w1, b1), R.Tensor((1, k), "float32"))
         R.output(out)
     return out
 ```
@@ -365,7 +365,7 @@ def main(x: R.Tensor((1, "m"), "float32"),
 到目前为止，我们已经完成了一个 Relax 程序的示例，并涵盖了大部分元素，包括：
 
 - 计算图
-- `call_tir`
+- `call_dps_packed`
 - Dataflow block
 
 这些元素应该让我们能够开始端到端的模型执行和编译。 当我们在后面的章节中遇到新概念时，我们还将介绍它们。
@@ -434,17 +434,17 @@ class MyModuleWithExternCall:
         # block 0
         m, n, k = T.int64(), T.int64(), T.int64()
         with R.dataflow():
-            lv0 = R.call_tir("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
-            lv1 = R.call_tir("env.relu", lv0, R.Tensor((1, n), "float32"))
-            out = R.call_tir("env.linear", (lv1, w1, b1), R.Tensor((1, k), "float32"))
+            lv0 = R.call_dps_packed("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
+            lv1 = R.call_dps_packed("env.relu", (lv0, ), R.Tensor((1, n), "float32"))
+            out = R.call_dps_packed("env.linear", (lv1, w1, b1), R.Tensor((1, k), "float32"))
             R.output(out)
         return out
 ```
 
-请注意，我们现在直接在 `call_tir` 中传入字符串：
+请注意，我们现在直接在 `call_dps_packed` 中传入字符串：
 
 ```python
-R.call_tir("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
+R.call_dps_packed("env.linear", (x, w0, b0), R.Tensor((1, n), "float32"))
 ```
 
 这些字符串是我们期望在模型执行期间的运行时函数 (runtime function) 的名称。
@@ -536,9 +536,9 @@ class MyModuleMixture:
              b1: R.Tensor(("k", ), "float32")):
         m, n, k = T.int64(), T.int64(), T.int64()
         with R.dataflow():
-            lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
-            lv1 = R.call_tir("env.relu", (lv0, ), R.Tensor((1, n), "float32"))
-            out = R.call_tir("env.linear", (lv1, w1, b1), R.Tensor((1, k), "float32"))
+            lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, n), "float32"))
+            lv1 = R.call_dps_packed("env.relu", (lv0, ), R.Tensor((1, n), "float32"))
+            out = R.call_dps_packed("env.linear", (lv1, w1, b1), R.Tensor((1, k), "float32"))
             R.output(out)
         return out
 ```
@@ -601,6 +601,6 @@ print("MyModuleWithParams Prediction:", class_names[pred_kind[0]])
 
 - 计算图抽象有助于将元张量函数拼接在一起以进行端到端执行。
 - Relax 抽象的关键要素包括
-   - call_tir 构造，将目标传递规范的元函数嵌入到计算图中
+   - call_dps_packed 构造，将目标传递规范的元函数嵌入到计算图中
    - Dataflow block
 - 计算图允许调用环境库函数和 `TensorIR` 函数。

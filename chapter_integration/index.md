@@ -177,7 +177,7 @@ isinstance(C, relax.Var)
 Relax 函数中的每一行都是由 `emit_te` 调用生成的。 例如，
 
 ```python
-lv = R.call_tir(te_matmul, (A, B), (128, 128), dtype="float32")
+lv = R.call_dps_packed(te_matmul, (A, B), (128, 128), dtype="float32")
 ```
 
 是由如下代码所生成。
@@ -191,7 +191,7 @@ C = bb.emit_te(te_matmul, A, B).
 - 为 A 和 B 创建一个输入 `te.placeholder`。
 - 通过 `te_matmul` 函数运行它们。
 - 调用 `te.create_prim_func` 来创建一个 TensorIR 函数。
-- 通过 `call_tir` 生成对函数的调用。
+- 通过 `call_dps_packed` 生成对函数的调用。
 
 我们可以发现，上面 BlockBuilder 构造后的结果是一个有两个中间值的计算图，一个节点对应 `te_matmul` 操作，另一个节点对应 `te_relu`。
 
@@ -497,7 +497,7 @@ MLPModuleHighLevel.show()
 
 上面展示了我们使用哪些内置的算子将模型导入为 IRModule 后的结果。这些内置算子是 **比 TensorIR 函数更高级别的抽象**。我们可以有不同的机会将这些原始算子进一步转换为库函数或 TensorIR 函数。
 
-在大多数情况下，在有高级算子支持的情况下，转换为高级内置函数会很有帮助。但是，有很多情况下我们找不到对应的高级内置算子或者想直接指定 TensorIR 函数。 在这些情况下，我们可以自定义翻译逻辑或变换从而生成 `call_tir` 或调用库函数。 通常，我们可以结合高级操作、TensorIR 和库抽象来获得最佳结果。 我们将在后续章节中讨论权衡取舍。
+在大多数情况下，在有高级算子支持的情况下，转换为高级内置函数会很有帮助。但是，有很多情况下我们找不到对应的高级内置算子或者想直接指定 TensorIR 函数。 在这些情况下，我们可以自定义翻译逻辑或变换从而生成 `call_dps_packed` 或调用库函数。 通常，我们可以结合高级操作、TensorIR 和库抽象来获得最佳结果。 我们将在后续章节中讨论权衡取舍。
 
 ## 讨论
 

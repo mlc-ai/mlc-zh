@@ -170,7 +170,7 @@ class MatmulModule:
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     C[vi, vj] = T.float32(0)
-                C[vi, vj] += A[vi, vk] * B[vk, vj]
+                C[vi, vj] += A[vi, vk] * B[vj, vk]
 ```
 
 ```{.python .input}
@@ -230,7 +230,7 @@ def tmm16_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
         for i, j, k in T.grid(16, 16, 16):
             with T.block(""):
                 vii, vjj, vkk = T.axis.remap("SSR", [i, j, k])
-                C[vii, vjj] = C[vii, vjj] + A[vii, vkk] * B[vkk, vjj]
+                C[vii, vjj] = C[vii, vjj] + A[vii, vkk] * B[vjj, vkk]
 
 
 @T.prim_func
@@ -310,11 +310,6 @@ sch.annotate(i, "pragma_import_llvm", tmm_kernel())
 然后我们可以去执行下面的代码块，它将张量化的计算重定向到自定义的 `tmm_kernel`。
 
 ```{.python .input}
-dtype = "float32"
-a_np = np.random.rand(1024, 1024).astype(dtype)
-b_np = np.random.rand(1024, 1024).astype(dtype)
-c_mm = a_np @ b_np
-
 a_nd = tvm.nd.array(a_np)
 b_nd = tvm.nd.array(b_np)
 
@@ -322,7 +317,7 @@ c_nd = tvm.nd.empty((1024, 1024), dtype="float32")
 
 lib = tvm.build(sch.mod, target="llvm")
 lib["main"](a_nd, b_nd, c_nd)
-np.testing.assert_allclose(c_nd.numpy(), c_mm, rtol=1e-5)
+np.testing.assert_allclose(c_nd.numpy(), c_tmm, rtol=1e-5)
 ```
 
 ### 讨论

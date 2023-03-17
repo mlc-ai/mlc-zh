@@ -455,9 +455,9 @@ class MyModuleMixture:
              w1: R.Tensor((10, 128), "float32"), 
              b1: R.Tensor((10,), "float32")):
         with R.dataflow():
-            lv0 = R.call_tir("linear0", (x, w0, b0), R.Tensor((1, 128), dtype="float32"))
-            lv1 = R.call_tir("env.relu", (lv0,), R.Tensor((1, 128), dtype="float32"))
-            out = R.call_tir("env.linear", (lv1, w1, b1), R.Tensor((1, 10), dtype="float32"))
+            lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, 128), dtype="float32"))
+            lv1 = R.call_dps_packed("env.relu", (lv0,), R.Tensor((1, 128), dtype="float32"))
+            out = R.call_dps_packed("env.linear", (lv1, w1, b1), R.Tensor((1, 10), dtype="float32"))
             R.output(out)
         return out
 ```
