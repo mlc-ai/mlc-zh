@@ -22,8 +22,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 import numpy as np
 from tvm import relax
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations 
 ```
 
 ```{.python .input n=1}
@@ -48,9 +46,9 @@ def code2html(code):
 class MyModule:
     @T.prim_func
     def main(
-        A: T.Buffer[(128, 128), "float32"],
-        B: T.Buffer[(128, 128), "float32"],
-        C: T.Buffer[(128, 128), "float32"],
+        A: T.Buffer((128, 128), "float32"),
+        B: T.Buffer((128, 128), "float32"),
+        C: T.Buffer((128, 128), "float32"),
     ):
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i, j, k in T.grid(128, 128, 128):
@@ -295,31 +293,31 @@ print(sch.trace)
 ```{.python .input n=25}
 from tvm import meta_schedule as ms
 
-sch_tuned = ms.tune_tir(
+database = ms.tune_tir(
     mod=MyModule,
     target="llvm --num-cores=1",
-    config=ms.TuneConfig(
-      max_trials_global=64,
-      num_trials_per_iter=64,
-    ),
+    max_trials_global=64,
+    num_trials_per_iter=64,
     space=ms.space_generator.ScheduleFn(stochastic_schedule_mm),
     work_dir="./tune_tmp",
     task_name="main"
 )
+
+sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
 ```
 
 `tune_tir` 函数返回在调优过程中找到的优化后的调度。
 
 ```{.python .input n=26}
-print(sch_tuned.trace)
+sch.trace.show()
 ```
 
 ```{.python .input n=27}
-IPython.display.HTML(code2html(sch_tuned.mod.script()))
+IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
 ```{.python .input n=28}
-lib = tvm.build(sch_tuned.mod, target="llvm")
+lib = tvm.build(sch.mod, target="llvm")
 f_timer_after = lib.time_evaluator("main", tvm.cpu())
 print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 ```
@@ -331,20 +329,19 @@ print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd,
 在底层，Meta-Schedule 分析每个 TensorIR block 的数据访问和循环模式，并提出对程序的随机变换方式。我们不会在本章中讨论这些通用的变换，但要注意它们也只是随机转换加上代码分析而已。我们可以使用上一节中学到的相同机制来增强自动调度。我们将在以后的章节中触及这个主题。
 
 ```{.python .input n=29}
-sch_tuned = ms.tune_tir(
+database = ms.tune_tir(
     mod=MyModule,
     target="llvm --num-cores=1",
-    config=ms.TuneConfig(
-      max_trials_global=64,
-      num_trials_per_iter=64,
-    ),
+    max_trials_global=64,
+    num_trials_per_iter=64,
     work_dir="./tune_tmp",
     task_name="main",
 )
+sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
 ```
 
 ```{.python .input n=30}
-lib = tvm.build(sch_tuned.mod, target="llvm")
+lib = tvm.build(sch.mod, target="llvm")
 f_timer_after = lib.time_evaluator("main", tvm.cpu())
 print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 ```
@@ -356,11 +353,11 @@ print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd,
 - 并行化和循环展开
 
 ```{.python .input n=31}
-sch_tuned.trace
+sch.trace.show()
 ```
 
 ```{.python .input n=32}
-IPython.display.HTML(code2html(sch_tuned.mod.script()))
+IPython.display.HTML(code2html(sch.mod.script()))
 ```
 
 ### 章节检查点
@@ -433,10 +430,10 @@ nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
 @tvm.script.ir_module
 class MyModuleMixture: 
     @T.prim_func
-    def linear0(X: T.Buffer[(1, 784), "float32"], 
-                W: T.Buffer[(128, 784), "float32"], 
-                B: T.Buffer[(128,), "float32"], 
-                Z: T.Buffer[(1, 128), "float32"]):
+    def linear0(X: T.Buffer((1, 784), "float32"), 
+                W: T.Buffer((128, 784), "float32"), 
+                B: T.Buffer((128,), "float32"), 
+                Z: T.Buffer((1, 128), "float32")):
         T.func_attr({"global_symbol": "linear0", "tir.noalias": True})
         Y = T.alloc_buffer((1, 128), "float32")
         for i, j, k in T.grid(1, 128, 784):
@@ -452,15 +449,15 @@ class MyModuleMixture:
                 Z[vi, vj] =  Y[vi, vj] + B[vj]
 
     @R.function
-    def main(x: Tensor((1, 784), "float32"), 
-             w0: Tensor((128, 784), "float32"), 
-             b0: Tensor((128,), "float32"), 
-             w1: Tensor((10, 128), "float32"), 
-             b1: Tensor((10,), "float32")):
+    def main(x: R.Tensor((1, 784), "float32"), 
+             w0: R.Tensor((128, 784), "float32"), 
+             b0: R.Tensor((128,), "float32"), 
+             w1: R.Tensor((10, 128), "float32"), 
+             b1: R.Tensor((10,), "float32")):
         with R.dataflow():
-            lv0 = R.call_tir(linear0, (x, w0, b0), (1, 128), dtype="float32")
-            lv1 = R.call_tir("env.relu", (lv0,), (1, 128), dtype="float32")
-            out = R.call_tir("env.linear", (lv1, w1, b1), (1, 10), dtype="float32")
+            lv0 = R.call_dps_packed("linear0", (x, w0, b0), R.Tensor((1, 128), dtype="float32"))
+            lv1 = R.call_dps_packed("env.relu", (lv0,), R.Tensor((1, 128), dtype="float32"))
+            out = R.call_dps_packed("env.linear", (lv1, w1, b1), R.Tensor((1, 10), dtype="float32"))
             R.output(out)
         return out
 ```
@@ -493,7 +490,7 @@ MyModuleWithParams = relax.transform.BindParams("main", nd_params)(MyModuleMixtu
 ```
 
 ```{.python .input n=40}
-ex = relax.vm.build(MyModuleWithParams, target="llvm")
+ex = relax.build(MyModuleWithParams, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd)
@@ -522,23 +519,22 @@ IPython.display.HTML(code2html(mod_linear.script()))
 ```
 
 ```{.python .input n=43}
-sch_tuned_linear = ms.tune_tir(
+database = ms.tune_tir(
     mod=mod_linear,
     target="llvm --num-cores=1",
-    config=ms.TuneConfig(
-      max_trials_global=64,
-      num_trials_per_iter=64,
-    ),
+    max_trials_global=64,
+    num_trials_per_iter=64,
     work_dir="./tune_tmp",
     task_name="main",
 )
+sch = ms.tir_integration.compile_tir(database, mod_linear, "llvm --num-cores=1")
 ```
 
 现在我们需要在调优后用新函数替换原来的 `linear0`。我们可以通过首先获得一个 `global_var`（一个指向 IRModule 中函数的 `pointer` 引用），然后调用 `update_func` 来用新的函数替换原本的函数。
 
 ```{.python .input n=44}
 MyModuleWithParams2 = relax.transform.BindParams("main", nd_params)(MyModuleMixture)
-new_func = sch_tuned_linear.mod["main"].with_attr("global_symbol", "linear0")
+new_func = sch.mod["main"].with_attr("global_symbol", "linear0")
 gv = MyModuleWithParams2.get_global_var("linear0")
 MyModuleWithParams2.update_func(gv, new_func)
 IPython.display.HTML(code2html(MyModuleWithParams2.script()))
@@ -547,7 +543,7 @@ IPython.display.HTML(code2html(MyModuleWithParams2.script()))
 我们可以发现上面代码中的 `linear0` 已经被替换了。
 
 ```{.python .input n=45}
-ex = relax.vm.build(MyModuleWithParams2, target="llvm")
+ex = relax.build(MyModuleWithParams2, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 
 nd_res = vm["main"](data_nd)

@@ -12,9 +12,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 from tvm import relax
 import numpy as np
-
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations 
 ```
 
 ### 硬件专业化趋势
@@ -89,9 +86,9 @@ np.testing.assert_allclose(c_np, c_tmm, rtol=1e-5)
 class MatmulBlockModule:
     @T.prim_func
     def main(
-        A: T.Buffer[(1024, 1024), "float32"],
-        B: T.Buffer[(1024, 1024), "float32"],
-        C: T.Buffer[(1024, 1024), "float32"],
+        A: T.Buffer((1024, 1024), "float32"),
+        B: T.Buffer((1024, 1024), "float32"),
+        C: T.Buffer((1024, 1024), "float32"),
     ) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i0, j0, k0 in T.grid(64, 64, 64):
@@ -163,9 +160,9 @@ sch.mod.show()
 class MatmulModule:
     @T.prim_func
     def main(
-        A: T.Buffer[(1024, 1024), "float32"],
-        B: T.Buffer[(1024, 1024), "float32"],
-        C: T.Buffer[(1024, 1024), "float32"],
+        A: T.Buffer((1024, 1024), "float32"),
+        B: T.Buffer((1024, 1024), "float32"),
+        C: T.Buffer((1024, 1024), "float32"),
     ) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i, j, k in T.grid(1024, 1024, 1024):
@@ -238,9 +235,9 @@ def tmm16_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
 
 @T.prim_func
 def tmm16_impl(a: T.handle, b: T.handle, c: T.handle) -> None:
-    sa = T.var("int32")
-    sb = T.var("int32")
-    sc = T.var("int32")
+    sa = T.int32()
+    sb = T.int32()
+    sc = T.int32()
     A = T.match_buffer(a, (16, 16), "float32", offset_factor=16, strides=[sa, 1], scope="global.A_reg")
     B = T.match_buffer(b, (16, 16), "float32", offset_factor=16, strides=[sb, 1], scope="global.B_reg")
     C = T.match_buffer(c, (16, 16), "float32", offset_factor=16, strides=[sc, 1], scope="global.accumulator")
@@ -312,7 +309,9 @@ sch.annotate(i, "pragma_import_llvm", tmm_kernel())
 
 然后我们可以去执行下面的代码块，它将张量化的计算重定向到自定义的 `tmm_kernel`。
 
-```{.python .input}
+```
+<!-- todo -->
+<!-- For CI, do not run this part of the code -->
 a_nd = tvm.nd.array(a_np)
 b_nd = tvm.nd.array(b_np)
 

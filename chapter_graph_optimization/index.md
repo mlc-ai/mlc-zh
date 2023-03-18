@@ -11,9 +11,6 @@
 首先，让我们导入必要的依赖项。
 
 ```{.python .input}
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations
-
 import tvm
 from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
@@ -29,15 +26,15 @@ import numpy as np
 @tvm.script.ir_module
 class MyModule:
     @R.function
-    def main(x: Tensor((3, 4), "float32"), y: Tensor((3, 4), "float32")):
-        with relax.dataflow():
-            lv0 = relax.multiply(x, y)
-            gv0 = relax.add(lv0, y)
-            relax.output(gv0)
+    def main(x: R.Tensor((3, 4), "float32"), y: R.Tensor((3, 4), "float32")):
+        with R.dataflow():
+            lv0 = relax.op.multiply(x, y)
+            gv0 = relax.op.add(lv0, y)
+            R.output(gv0)
         return gv0
 ```
 
-`MyModule` 包含一个带有两个图层 op 的 relax 函数，其中包含 `relax.multiply` 和`relax.add`。我们的目标是找到这两个运算符并将它们替换为一个 `relax.ewise_fma` 运算符的调用。
+`MyModule` 包含一个带有两个图层 op 的 relax 函数，其中包含 `relax.op.multiply` 和`relax.op.add`。我们的目标是找到这两个运算符并将它们替换为一个 `relax.op.ewise_fma` 运算符的调用。
 
 在我们研究如何准确地做到这一点之前，让我们首先检查构成 `MyModule` 的数据结构。 每个 `IRModule` 都包含一组函数，函数体由一组称为抽象语法树（AST）的数据结构组成。
 
@@ -45,7 +42,7 @@ class MyModule:
 relax_func = MyModule["main"]
 ```
 
-每个函数都由一个 `relax.Function` 节点表示。
+每个函数都由一个 `relax.expr.Function` 节点表示。
 
 ```{.python .input}
 type(relax_func)
@@ -77,8 +74,8 @@ dataflow_block = func_body.blocks[0]
 在我们的特定情况下，我们有一个数据流块，其中包含两个 Binding 。绑定对应于以下代码：
 
 ```python
-lv0 = relax.multiply(x, y)
-gv0 = relax.add(lv0, y)
+lv0 = relax.op.multiply(x, y)
+gv0 = relax.op.add(lv0, y)
 ```
 
 ```{.python .input}
@@ -153,23 +150,22 @@ import pickle as pkl
 mlp_params = pkl.load(open("fasionmnist_mlp_params.pkl", "rb"))
 ```
 
-以下代码重新构建了我们在过去章节中使用的 FashionMNIST MLP 模型。 为了简化过程，我们直接使用高级运算符构建模型，例如 `relax.op.add` 和 `relax.op.dense`。
+以下代码重新构建了我们在过去章节中使用的 FashionMNIST MLP 模型。 为了简化过程，我们直接使用高级运算符构建模型，例如 `relax.op.add` 和 `relax.op.matmul`。
 
 ```{.python .input}
 def create_model():
     bb = relax.BlockBuilder()
-    x = relax.Var("x", (1, 784), relax.DynTensorType(2, "float32"))
+    x = relax.Var("x", relax.TensorStructInfo((1, 784), "float32"))
     w0 = relax.const(mlp_params["w0"], "float32")
     b0 = relax.const(mlp_params["b0"], "float32")
     w1 = relax.const(mlp_params["w1"], "float32")
     b1 = relax.const(mlp_params["b1"], "float32")
-
     with bb.function("main", [x]):
         with bb.dataflow():
-            lv0 = bb.emit(relax.op.dense(x, w0))
+            lv0 = bb.emit(relax.op.matmul(x, relax.op.permute_dims(w0)))
             lv1 = bb.emit(relax.op.add(lv0, b0))
-            lv2 = bb.emit(relax.op.relu(lv1))
-            lv3 = bb.emit(relax.op.dense(lv2, w1))
+            lv2 = bb.emit(relax.op.nn.relu(lv1))
+            lv3 = bb.emit(relax.op.matmul(lv2, relax.op.permute_dims(w1)))
             lv4 = bb.emit(relax.op.add(lv3, b1))
             gv = bb.emit_output(lv4)
         bb.emit_func_output(gv)
@@ -180,21 +176,21 @@ MLPModel = create_model()
 MLPModel.show()
 ```
 
-我们的目标是“融合” `dense` 和 `add` 算子到一起。 以下代码通过以下步骤实现：
+我们的目标是“融合” `matmul` 和 `add` 算子到一起。 以下代码通过以下步骤实现：
 
-- 识别 `dense` 和 `add` 算子。
-- 生成另一个调用 `dense` 和 `add` 算子的子函数。
-- 将 `dense` 和 `add` 替换为融合后的子函数。
+- 识别 `matmul` 和 `add` 算子。
+- 生成另一个调用 `matmul` 和 `add` 算子的子函数。
+- 将 `matmul` 和 `add` 替换为融合后的子函数。
 
 ```{.python .input}
 @relax.expr_functor.mutator
-class DenseAddFusor(relax.PyExprMutator):
+class MatmulAddFusor(relax.PyExprMutator):
     def __init__(self, mod: IRModule) -> None:
         super().__init__()
         self.mod_ = mod
         # cache pre-defined ops
         self.add_op = tvm.ir.Op.get("relax.add")
-        self.dense_op = tvm.ir.Op.get("relax.nn.dense")
+        self.matmul_op = tvm.ir.Op.get("relax.matmul")
         self.counter = 0
 
     def transform(self) -> IRModule:
@@ -202,7 +198,7 @@ class DenseAddFusor(relax.PyExprMutator):
             if not isinstance(func, relax.Function):
                 continue
             # avoid already fused primitive functions
-            if "Primitive" in func.attrs.keys() and func.attrs["Primitive"] != 0:
+            if func.attrs is not None and "Primitive" in func.attrs.keys() and func.attrs["Primitive"] != 0:
                 continue
             updated_func = self.visit_expr(func)
             updated_func = relax.analysis.remove_all_unused(updated_func)
@@ -218,7 +214,7 @@ class DenseAddFusor(relax.PyExprMutator):
                 return False
             return node.op == op
 
-        # pattern match dense => add
+        # pattern match matmul => add
         if not match_call(call, self.add_op):
             return call
 
@@ -226,7 +222,7 @@ class DenseAddFusor(relax.PyExprMutator):
         if value is None:
             return call
 
-        if not match_call(value, self.dense_op):
+        if not match_call(value, self.matmul_op):
             return call
 
         x = value.args[0]
@@ -234,17 +230,17 @@ class DenseAddFusor(relax.PyExprMutator):
         b = call.args[1]
 
         # construct a new fused primitive function
-        param_x = relax.Var("x", x.shape_, x._checked_type_)
-        param_w = relax.Var("w", w.shape_, w._checked_type_)
-        param_b = relax.Var("b", b.shape_, b._checked_type_)
+        param_x = relax.Var("x" ,relax.TensorStructInfo(x.struct_info.shape, x.struct_info.dtype))
+        param_w = relax.Var("w" ,relax.TensorStructInfo(w.struct_info.shape, w.struct_info.dtype))
+        param_b = relax.Var("b" ,relax.TensorStructInfo(b.struct_info.shape, b.struct_info.dtype))
 
         bb = relax.BlockBuilder()
 
-        fn_name = "fused_dense_add%d" % (self.counter)
+        fn_name = "fused_matmul_add%d" % (self.counter)
         self.counter += 1
         with bb.function(fn_name, [param_x, param_w, param_b]):
             with bb.dataflow():
-                lv0 = bb.emit(relax.op.nn.dense(param_x, param_w))
+                lv0 = bb.emit(relax.op.matmul(param_x, param_w))
                 gv = bb.emit_output(relax.op.add(lv0, param_b))
             bb.emit_func_output(gv)
 
@@ -255,11 +251,11 @@ class DenseAddFusor(relax.PyExprMutator):
         # construct call into the fused function
         return relax.Call(global_var, [x, w, b], None, None)
 
-@tvm.ir.transform.module_pass(opt_level=2, name="DeseAddFuse")
+@tvm.ir.transform.module_pass(opt_level=2, name="MatmulAddFuse")
 class FuseDenseAddPass:
     """The wrapper for the LowerTensorIR pass."""
     def transform_module(self, mod, ctx):
-        return DenseAddFusor(mod).transform()
+        return MatmulAddFusor(mod).transform()
 
 
 MLPFused = FuseDenseAddPass()(MLPModel)
@@ -268,7 +264,7 @@ MLPFused.show()
 
 ### 为什么要创建子函数
 
-在上面的例子中，我们创建了两个前缀为 `fuse_dense_add` 的子函数。 这些子函数包含有融合后算子的计算信息。 这种重写的替代方法是简单地为融合运算符创建一个单独的原始操作（如`ewise_fma`）。 但是，当我们尝试融合更多运算符时，可能存在指数级数量的组合。 将融合操作分组在一起的子函数为后续的 pass 保留了原始信息，进而便于分析，无需为每个融合 pattern 引入专用的高级运算符。
+在上面的例子中，我们创建了两个前缀为 `fuse_matmul_add` 的子函数。 这些子函数包含有融合后算子的计算信息。 这种重写的替代方法是简单地为融合运算符创建一个单独的原始操作（如`ewise_fma`）。 但是，当我们尝试融合更多运算符时，可能存在指数级数量的组合。 将融合操作分组在一起的子函数为后续的 pass 保留了原始信息，进而便于分析，无需为每个融合 pattern 引入专用的高级运算符。
 
 ## 映射到 TensorIR Calls
 
@@ -304,9 +300,9 @@ class LowerToTensorIR(relax.PyExprMutator):
         return self.builder_.get()
 
 
-def map_dense(bb, call):
+def map_matmul(bb, call):
     x, w = call.args
-    return bb.call_te(topi.nn.dense, x, w)
+    return bb.call_te(topi.nn.matmul, x, w)
 
 def map_add(bb, call):
     a, b = call.args
@@ -315,11 +311,14 @@ def map_add(bb, call):
 def map_relu(bb, call):
     return bb.call_te(topi.nn.relu, call.args[0])
 
+def map_transpose(bb, call):
+    return bb.call_te(topi.transpose, call.args[0], )
 
 op_map = {
-  "relax.nn.dense": map_dense,
+  "relax.matmul": map_matmul,
   "relax.add": map_add,
-  "relax.nn.relu": map_relu
+  "relax.nn.relu": map_relu,
+  "relax.permute_dims": map_transpose
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")
@@ -333,7 +332,7 @@ MLPModelTIR = LowerToTensorIRPass()(MLPFused)
 MLPModelTIR.show()
 ```
 
-请注意，在上面的代码中。 `fused_dense_add0` 和 `fused_dense_add1` 仍然是上层 relax 函数，它们调用相应的 TensorIR `dense` 和 `add` 函数。 我们可以将它们变成一个单一的 TensorIR 函数，然后可以用于后续优化和代码生成阶段。
+请注意，在上面的代码中。 `fused_matmul_add0` 和 `fused_matmul_add1` 仍然是上层 relax 函数，它们调用相应的 TensorIR `matmul` 和 `add` 函数。 我们可以将它们变成一个单一的 TensorIR 函数，然后可以用于后续优化和代码生成阶段。
 
 ```{.python .input}
 MLPModelFinal = relax.transform.FuseTIR()(MLPModelTIR)
@@ -376,7 +375,7 @@ print("Class:", class_names[label[0]])
 ```
 
 ```{.python .output}
-ex = relax.vm.build(MLPModelFinal, target="llvm")
+ex = relax.build(MLPModelFinal, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 data_nd = tvm.nd.array(img.reshape(1, 784))
 

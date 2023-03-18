@@ -16,9 +16,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 from tvm import relax
 import numpy as np
-
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations
 ```
 
 ```{.python .input}
@@ -133,8 +130,8 @@ te.create_prim_func([A, B, C, D]).show()
 让我们首先创建一个 block builder，它可以帮助我们逐步构建一个 `relax.Function`。
 
 ```{.python .input}
-A = relax.Var("A", (128, 128), relax.DynTensorType(2, "float32"))
-B = relax.Var("B", (128, 128), relax.DynTensorType(2, "float32"))
+A = relax.Var("A", relax.TensorStructInfo((128, 128), "float32"))
+B = relax.Var("B", relax.TensorStructInfo((128, 128), "float32"))
 ```
 
 我们通过创建 block builder 和一系列元张量函数来构造 Relax 函数。
@@ -180,7 +177,7 @@ isinstance(C, relax.Var)
 Relax 函数中的每一行都是由 `emit_te` 调用生成的。 例如，
 
 ```python
-lv = R.call_tir(te_matmul, (A, B), (128, 128), dtype="float32")
+lv = R.call_dps_packed(te_matmul, (A, B), (128, 128), dtype="float32")
 ```
 
 是由如下代码所生成。
@@ -194,7 +191,7 @@ C = bb.emit_te(te_matmul, A, B).
 - 为 A 和 B 创建一个输入 `te.placeholder`。
 - 通过 `te_matmul` 函数运行它们。
 - 调用 `te.create_prim_func` 来创建一个 TensorIR 函数。
-- 通过 `call_tir` 生成对函数的调用。
+- 通过 `call_dps_packed` 生成对函数的调用。
 
 我们可以发现，上面 BlockBuilder 构造后的结果是一个有两个中间值的计算图，一个节点对应 `te_matmul` 操作，另一个节点对应 `te_relu`。
 
@@ -274,9 +271,8 @@ fx_module.graph.print_tabular()
 
 ```{.python .input}
 def map_param(param: nn.Parameter):
-    ndim = len(param.data.shape)
     return relax.const(
-        param.data.cpu().numpy(), relax.DynTensorType(ndim, "float32")
+        param.data.cpu().numpy(), relax.TensorStructInfo(param.data.shape, "float32")
     )
 
 def fetch_attr(fx_mod, target: str):
@@ -306,7 +302,7 @@ def from_fx(fx_mod, input_shapes, call_function_map, call_module_map):
                     shape = input_shapes[input_index]
                     input_index += 1
                     input_var = relax.Var(
-                        node.target, shape, relax.DynTensorType(len(shape), "float32")
+                        node.target, relax.TensorStructInfo(shape, "float32")
                     )
                     fn_inputs.append(input_var)
                     node_map[node] = input_var
@@ -460,7 +456,7 @@ MLPModule.show()
 ```
 
 ```{.python .input}
-ex = relax.vm.build(MLPModule, target="llvm")
+ex = relax.build(MLPModule, target="llvm")
 vm = relax.VirtualMachine(ex, tvm.cpu())
 data_nd = tvm.nd.array(img.reshape(1, 784))
 
@@ -477,15 +473,13 @@ print("MLPModule Prediction:", class_names[pred_kind[0]])
 ```{.python .input}
 def map_nn_relu_op(bb, node_map, node, nn_mod):
     A = node_map[node.args[0]]
-    return bb.emit(relax.op.relu(A))
+    return bb.emit(relax.op.nn.relu(A))
 
 def map_nn_linear_op(bb, node_map, node, nn_mod):
     x = node_map[node.args[0]]
     w = map_param(nn_mod.weight)
-    if nn_mod.bias is not None:
-        b = map_param(nn_mod.bias)
-    y = bb.emit(relax.op.dense(x, w))
-    return bb.emit(relax.op.add(y, b))
+    b = map_param(nn_mod.bias)
+    return bb.emit(relax.op.linear(x, w, b))
 
 MLPModuleHighLevel = from_fx(
     fx.symbolic_trace(mlp_model),
@@ -503,7 +497,7 @@ MLPModuleHighLevel.show()
 
 上面展示了我们使用哪些内置的算子将模型导入为 IRModule 后的结果。这些内置算子是 **比 TensorIR 函数更高级别的抽象**。我们可以有不同的机会将这些原始算子进一步转换为库函数或 TensorIR 函数。
 
-在大多数情况下，在有高级算子支持的情况下，转换为高级内置函数会很有帮助。但是，有很多情况下我们找不到对应的高级内置算子或者想直接指定 TensorIR 函数。 在这些情况下，我们可以自定义翻译逻辑或变换从而生成 `call_tir` 或调用库函数。 通常，我们可以结合高级操作、TensorIR 和库抽象来获得最佳结果。 我们将在后续章节中讨论权衡取舍。
+在大多数情况下，在有高级算子支持的情况下，转换为高级内置函数会很有帮助。但是，有很多情况下我们找不到对应的高级内置算子或者想直接指定 TensorIR 函数。 在这些情况下，我们可以自定义翻译逻辑或变换从而生成 `call_dps_packed` 或调用库函数。 通常，我们可以结合高级操作、TensorIR 和库抽象来获得最佳结果。 我们将在后续章节中讨论权衡取舍。
 
 ## 讨论
 

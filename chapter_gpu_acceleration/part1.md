@@ -22,9 +22,6 @@ from tvm.ir.module import IRModule
 from tvm.script import tir as T, relax as R
 from tvm import relax
 import numpy as np
-
-# This is needed for deferring annotation parsing in TVMScript
-from __future__ import annotations
 ```
 
 ### GPU 体系结构
@@ -43,9 +40,9 @@ from __future__ import annotations
 @tvm.script.ir_module
 class MyModuleVecAdd:
     @T.prim_func
-    def main(A: T.Buffer[(1024,), "float32"],
-             B: T.Buffer[(1024,), "float32"],
-             C: T.Buffer[(1024,), "float32"]) -> None:
+    def main(A: T.Buffer((1024,), "float32"),
+             B: T.Buffer((1024,), "float32"),
+             C: T.Buffer((1024,), "float32")) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i in T.grid(1024):
             with T.block("C"):
@@ -176,9 +173,9 @@ print(rt_mod.imported_modules[0].get_source())
 @tvm.script.ir_module
 class MyModuleMatmul:
     @T.prim_func
-    def main(A: T.Buffer[(1024, 1024), "float32"],
-             B: T.Buffer[(1024, 1024), "float32"],
-             C: T.Buffer[(1024, 1024), "float32"]) -> None:
+    def main(A: T.Buffer((1024, 1024), "float32"),
+             B: T.Buffer((1024, 1024), "float32"),
+             C: T.Buffer((1024, 1024), "float32")) -> None:
         T.func_attr({"global_symbol": "main", "tir.noalias": True})
         for i, j, k in T.grid(1024, 1024, 1024):
             with T.block("C"):
@@ -315,21 +312,20 @@ print("GEMM-Blocking: %f GFLOPS" % (num_flop / evaluator(A_nd, B_nd, C_nd).mean 
 ```python
 from tvm import meta_schedule as ms
 
-sch_tuned = ms.tune_tir(
+database = ms.tune_tir(
     mod=MyModuleMatmul,
     target="nvidia/tesla-p100",
-    config=ms.TuneConfig(
-      max_trials_global=64,
-      num_trials_per_iter=64,
-    ),
+    max_trials_global=64,
+    num_trials_per_iter=64,
     work_dir="./tune_tmp",
     task_name="main"
 )
-sch_tuned.mod.show()
+sch = ms.tir_integration.compile_tir(database, MyModuleMatmul, "nvidia/tesla-p100")
+sch.mod.show()
 ```
 
 ```python
-rt_mod = tvm.build(sch_tuned.mod, target="nvidia/tesla-p100")
+rt_mod = tvm.build(sch.mod, target="nvidia/tesla-p100")
 dev = tvm.cuda(0)
 evaluator = rt_mod.time_evaluator("main", dev, number=10)
 
