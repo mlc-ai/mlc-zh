@@ -309,7 +309,9 @@ sch.annotate(i, "pragma_import_llvm", tmm_kernel())
 
 然后我们可以去执行下面的代码块，它将张量化的计算重定向到自定义的 `tmm_kernel`。
 
-```{.python .input}
+```
+<!-- todo -->
+<!-- For CI, do not run this part of the code -->
 a_nd = tvm.nd.array(a_np)
 b_nd = tvm.nd.array(b_np)
 
