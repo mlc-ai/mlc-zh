@@ -1,4 +1,4 @@
-# MLC: Machine Learning Compiler
+# MLC: Machine Learning Compiler tool
 
 ## Installation
 
