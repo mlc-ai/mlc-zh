@@ -300,7 +300,6 @@ database = ms.tune_tir(
     num_trials_per_iter=64,
     space=ms.space_generator.ScheduleFn(stochastic_schedule_mm),
     work_dir="./tune_tmp",
-    task_name="main"
 )
 
 sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
@@ -335,7 +334,6 @@ database = ms.tune_tir(
     max_trials_global=64,
     num_trials_per_iter=64,
     work_dir="./tune_tmp",
-    task_name="main",
 )
 sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
 ```
@@ -525,7 +523,6 @@ database = ms.tune_tir(
     max_trials_global=64,
     num_trials_per_iter=64,
     work_dir="./tune_tmp",
-    task_name="main",
 )
 sch = ms.tir_integration.compile_tir(database, mod_linear, "llvm --num-cores=1")
 ```
