@@ -3,7 +3,7 @@
 ```{.python .input n=0}
 import tvm
 from tvm.ir.module import IRModule
-from tvm.script import tir as T
+from tvm.script import tirx as T
 import numpy as np
 import IPython
 ```
@@ -55,7 +55,7 @@ class MyAdd:
           C: T.Buffer((4, 4), "int64")):
     T.func_attr({"global_symbol": "add"})
     for i, j in T.grid(4, 4):
-      with T.block("C"):
+      with T.sblock("C"):
         vi = T.axis.spatial(4, i)
         vj = T.axis.spatial(4, j)
         C[vi, vj] = A[vi, vj] + B[vi, vj]
@@ -93,7 +93,7 @@ c_np
 class MyAdd:
   @T.prim_func
   def add():
-    T.func_attr({"global_symbol": "add", "tir.noalias": True})
+    T.func_attr({"global_symbol": "add", "tirx.noalias": True})
     # TODO
     ...
 
@@ -140,7 +140,7 @@ conv_torch
 class MyConv:
   @T.prim_func
   def conv():
-    T.func_attr({"global_symbol": "conv", "tir.noalias": True})
+    T.func_attr({"global_symbol": "conv", "tirx.noalias": True})
     # TODO
     ...
 
@@ -169,13 +169,13 @@ class MyAdd:
           C: T.Buffer((4, 4), "int64")):
     T.func_attr({"global_symbol": "add"})
     for i, j in T.grid(4, 4):
-      with T.block("C"):
+      with T.sblock("C"):
         vi = T.axis.spatial(4, i)
         vj = T.axis.spatial(4, j)
         C[vi, vj] = A[vi, vj] + B[vi, vj]
 
-sch = tvm.tir.Schedule(MyAdd)
-block = sch.get_block("C", func_name="add")
+sch = tvm.s_tir.Schedule(MyAdd)
+block = sch.get_sblock("C", func_name="add")
 i, j = sch.get_loops(block)
 i0, i1 = sch.split(i, factors=[2, 2])
 sch.parallel(i0)
@@ -213,11 +213,11 @@ def lnumpy_mm_relu_v2(A: np.ndarray, B: np.ndarray, C: np.ndarray):
 class MyBmmRelu:
   @T.prim_func
   def bmm_relu():
-    T.func_attr({"global_symbol": "bmm_relu", "tir.noalias": True})
+    T.func_attr({"global_symbol": "bmm_relu", "tirx.noalias": True})
     # TODO
     ...
 
-sch = tvm.tir.Schedule(MyBmmRelu)
+sch = tvm.s_tir.Schedule(MyBmmRelu)
 IPython.display.Code(sch.mod.script(), language="python")
 # Also please validate your result
 ```
@@ -229,25 +229,25 @@ IPython.display.Code(sch.mod.script(), language="python")
 class TargetModule:
     @T.prim_func
     def bmm_relu(A: T.Buffer((16, 128, 128), "float32"), B: T.Buffer((16, 128, 128), "float32"), C: T.Buffer((16, 128, 128), "float32")) -> None:
-        T.func_attr({"global_symbol": "bmm_relu", "tir.noalias": True})
+        T.func_attr({"global_symbol": "bmm_relu", "tirx.noalias": True})
         Y = T.alloc_buffer([16, 128, 128], dtype="float32")
         for i0 in T.parallel(16):
             for i1, i2_0 in T.grid(128, 16):
                 for ax0_init in T.vectorized(8):
-                    with T.block("Y_init"):
+                    with T.sblock("Y_init"):
                         n, i = T.axis.remap("SS", [i0, i1])
                         j = T.axis.spatial(128, i2_0 * 8 + ax0_init)
                         Y[n, i, j] = T.float32(0)
                 for ax1_0 in T.serial(32):
                     for ax1_1 in T.unroll(4):
                         for ax0 in T.serial(8):
-                            with T.block("Y_update"):
+                            with T.sblock("Y_update"):
                                 n, i = T.axis.remap("SS", [i0, i1])
                                 j = T.axis.spatial(128, i2_0 * 8 + ax0)
                                 k = T.axis.reduce(128, ax1_0 * 4 + ax1_1)
                                 Y[n, i, j] = Y[n, i, j] + A[n, i, k] * B[n, k, j]
                 for i2_1 in T.vectorized(8):
-                    with T.block("C"):
+                    with T.sblock("C"):
                         n, i = T.axis.remap("SS", [i0, i1])
                         j = T.axis.spatial(128, i2_0 * 8 + i2_1)
                         C[n, i, j] = T.max(Y[n, i, j], T.float32(0))
@@ -256,7 +256,7 @@ class TargetModule:
 你的任务是将原始程序转换为目标程序。
 
 ```python
-sch = tvm.tir.Schedule(MyBmmRelu)
+sch = tvm.s_tir.Schedule(MyBmmRelu)
 # TODO: transformations
 # Hints: you can use
 # `IPython.display.Code(sch.mod.script(), language="python")`
@@ -264,7 +264,7 @@ sch = tvm.tir.Schedule(MyBmmRelu)
 # to show the current program at any time during the transformation.
 
 # Step 1. Get blocks
-Y = sch.get_block("Y", func_name="bmm_relu")
+Y = sch.get_sblock("Y", func_name="bmm_relu")
 ...
 
 # Step 2. Get loops

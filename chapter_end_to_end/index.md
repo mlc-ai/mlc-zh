@@ -18,7 +18,7 @@
 ```{.python .input n=1}
 import tvm
 from tvm.ir.module import IRModule
-from tvm.script import tir as T, relax as R
+from tvm.script import tirx as T, relax as R
 import numpy as np
 from tvm import relax
 import IPython
@@ -178,7 +178,7 @@ class MyModule:
         X = T.match_buffer(x, (1, n), "float32")
         Y = T.match_buffer(y, (1, n), "float32")
         for i, j in T.grid(1, n):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 Y[vi, vj] = T.max(X[vi, vj], T.float32(0))
 
@@ -194,13 +194,13 @@ class MyModule:
         Z = T.match_buffer(z, (1, n), "float32")
         Y = T.alloc_buffer((1, n), "float32")
         for i, j, k in T.grid(1, n, m):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + X[vi, vk] * W[vj, vk]
         for i, j in T.grid(1, n):
-            with T.block("Z"):
+            with T.sblock("Z"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 Z[vi, vj] = Y[vi, vj] + B[vj]
 
@@ -520,13 +520,13 @@ class MyModuleMixture:
         Z = T.match_buffer(z, (1, n), "float32")
         Y = T.alloc_buffer((1, n), "float32")
         for i, j, k in T.grid(1, n, m):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + X[vi, vk] * W[vj, vk]
         for i, j in T.grid(1, n):
-            with T.block("Z"):
+            with T.sblock("Z"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 Z[vi, vj] = Y[vi, vj] + B[vj]
 

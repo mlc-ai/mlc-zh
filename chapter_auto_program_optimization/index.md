@@ -19,7 +19,7 @@
 ```{.python .input n=0}
 import tvm
 from tvm.ir.module import IRModule
-from tvm.script import tir as T, relax as R
+from tvm.script import tirx as T, relax as R
 import numpy as np
 from tvm import relax
 ```
@@ -50,9 +50,9 @@ class MyModule:
         B: T.Buffer((128, 128), "float32"),
         C: T.Buffer((128, 128), "float32"),
     ):
-        T.func_attr({"global_symbol": "main", "tir.noalias": True})
+        T.func_attr({"global_symbol": "main", "tirx.noalias": True})
         for i, j, k in T.grid(128, 128, 128):
-            with T.block("C"):
+            with T.sblock("C"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     C[vi, vj] = 0.0
@@ -83,8 +83,8 @@ print("Time cost of MyModule: %.3f ms" % (f_timer_before(a_nd, b_nd, c_nd).mean 
 接下来，我们通过重新组织循环访问模式来稍微变换 `MyModule`。
 
 ```{.python .input n=5}
-def schedule_mm(sch: tvm.tir.Schedule, jfactor=4):
-    block_C = sch.get_block("C", "main")
+def schedule_mm(sch: tvm.s_tir.Schedule, jfactor=4):
+    block_C = sch.get_sblock("C", "main")
     i, j, k = sch.get_loops(block=block_C)
     j_0, j_1 = sch.split(loop=j, factors=[None, jfactor])
     sch.reorder(i, j_0, k, j_1)
@@ -93,7 +93,7 @@ def schedule_mm(sch: tvm.tir.Schedule, jfactor=4):
 ```
 
 ```{.python .input n=6}
-sch = tvm.tir.Schedule(MyModule)
+sch = tvm.s_tir.Schedule(MyModule)
 sch = schedule_mm(sch)
 IPython.display.HTML(code2html(sch.mod.script()))
 ```
@@ -115,8 +115,8 @@ print(sch.trace)
 ```
 
 ```{.python .input n=9}
-def schedule_mm(sch: tvm.tir.Schedule, jfactor=4):
-    block_C = sch.get_block("C", "main")
+def schedule_mm(sch: tvm.s_tir.Schedule, jfactor=4):
+    block_C = sch.get_sblock("C", "main")
     i, j, k = sch.get_loops(block=block_C)
     j_0, j_1 = sch.split(loop=j, factors=[None, jfactor])
     sch.reorder(i, j_0, k, j_1)
@@ -135,8 +135,8 @@ def schedule_mm(sch: tvm.tir.Schedule, jfactor=4):
 实现目标的一种自然方法是在我们的变换中添加一些随机元素。下面的代码就是这样做的。
 
 ```{.python .input n=10}
-def stochastic_schedule_mm(sch: tvm.tir.Schedule):
-    block_C = sch.get_block("C", "main")
+def stochastic_schedule_mm(sch: tvm.s_tir.Schedule):
+    block_C = sch.get_sblock("C", "main")
     i, j, k = sch.get_loops(block=block_C)
     j_factors = sch.sample_perfect_tile(loop=j, n=2)
     j_0, j_1 = sch.split(loop=j, factors=j_factors)
@@ -154,7 +154,7 @@ def stochastic_schedule_mm(sch: tvm.tir.Schedule):
 我们首先通过运行以下代码块来尝试查看 `stochastic_schedule_mm` 的效果。尝试多次运行以下代码块并观察结果差异。你可能会发现每次运行代码块时， `j_1` 的循环边界都会发生变化。
 
 ```{.python .input n=11}
-sch = tvm.tir.Schedule(MyModule)
+sch = tvm.s_tir.Schedule(MyModule)
 sch = stochastic_schedule_mm(sch)
 
 IPython.display.HTML(code2html(sch.mod.script()))
@@ -171,7 +171,7 @@ print(sch.trace)
 作为查看 `stochastic_schedule_mm` 不同采样结果的另一种方法，我们可以多次运行以下代码块并查看历史轨迹。
 
 ```{.python .input n=13}
-sch = tvm.tir.Schedule(MyModule)
+sch = tvm.s_tir.Schedule(MyModule)
 sch = stochastic_schedule_mm(sch)
 print(sch.trace)
 ```
@@ -186,8 +186,8 @@ print(sch.trace)
 让我们尝试逐步运行随机变换。
 
 ```{.python .input n=14}
-sch = tvm.tir.Schedule(MyModule)
-block_C = sch.get_block("C", "main")
+sch = tvm.s_tir.Schedule(MyModule)
+block_C = sch.get_sblock("C", "main")
 i, j, k = sch.get_loops(block=block_C)
 j_factors = sch.sample_perfect_tile(loop=j, n=2)
 ```
@@ -256,7 +256,7 @@ def random_search(mod: tvm.IRModule, num_trials=5):
     best_sch = None
 
     for i in range(num_trials):
-        sch = stochastic_schedule_mm(tvm.tir.Schedule(mod))
+        sch = stochastic_schedule_mm(tvm.s_tir.Schedule(mod))
         lib = tvm.compile(sch.mod, target="llvm")
         f_timer_after = lib.mod.time_evaluator("main", tvm.cpu())
         result = f_timer_after(a_nd, b_nd, c_nd).mean
@@ -291,18 +291,18 @@ print(sch.trace)
 尽管有这些工具，但我们关键思想是保持不变的：**使用随机变换来指定好的程序的搜索空间，使用 `tune_tir` API 帮助在搜索空间内搜索并找到最优的调度变换**。
 
 ```{.python .input n=25}
-from tvm import meta_schedule as ms
+from tvm.s_tir import meta_schedule as ms
 
 database = ms.tune_tir(
     mod=MyModule,
-    target="llvm --num-cores=1",
+    target=tvm.target.Target({"kind": "llvm", "num-cores": 1}),
     max_trials_global=64,
     num_trials_per_iter=64,
     space=ms.space_generator.ScheduleFn(stochastic_schedule_mm),
     work_dir="./tune_tmp",
 )
 
-sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, MyModule, tvm.target.Target({"kind": "llvm", "num-cores": 1}))
 ```
 
 `tune_tir` 函数返回在调优过程中找到的优化后的调度。
@@ -330,12 +330,12 @@ print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd,
 ```{.python .input n=29}
 database = ms.tune_tir(
     mod=MyModule,
-    target="llvm --num-cores=1",
+    target=tvm.target.Target({"kind": "llvm", "num-cores": 1}),
     max_trials_global=64,
     num_trials_per_iter=64,
     work_dir="./tune_tmp",
 )
-sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, MyModule, tvm.target.Target({"kind": "llvm", "num-cores": 1}))
 ```
 
 ```{.python .input n=30}
@@ -432,17 +432,17 @@ class MyModuleMixture:
                 W: T.Buffer((128, 784), "float32"), 
                 B: T.Buffer((128,), "float32"), 
                 Z: T.Buffer((1, 128), "float32")):
-        T.func_attr({"global_symbol": "linear0", "tir.noalias": True})
+        T.func_attr({"global_symbol": "linear0", "tirx.noalias": True})
         Y = T.alloc_buffer((1, 128), "float32")
         for i, j, k in T.grid(1, 128, 784):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + X[vi, vk] * W[vj, vk]
     
         for i, j in T.grid(1, 128):
-            with T.block("Z"):
+            with T.sblock("Z"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 Z[vi, vj] =  Y[vi, vj] + B[vj]
 
@@ -520,12 +520,12 @@ IPython.display.HTML(code2html(mod_linear.script()))
 ```{.python .input n=43}
 database = ms.tune_tir(
     mod=mod_linear,
-    target="llvm --num-cores=1",
+    target=tvm.target.Target({"kind": "llvm", "num-cores": 1}),
     max_trials_global=64,
     num_trials_per_iter=64,
     work_dir="./tune_tmp",
 )
-sch = ms.tir_integration.compile_tir(database, mod_linear, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, mod_linear, tvm.target.Target({"kind": "llvm", "num-cores": 1}))
 ```
 
 现在我们需要在调优后用新函数替换原来的 `linear0`。我们可以通过首先获得一个 `global_var`（一个指向 IRModule 中函数的 `pointer` 引用），然后调用 `update_func` 来用新的函数替换原本的函数。

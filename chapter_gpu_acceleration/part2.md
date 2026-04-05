@@ -9,7 +9,7 @@
 ```{.python .input}
 import tvm
 from tvm.ir.module import IRModule
-from tvm.script import tir as T, relax as R
+from tvm.script import tirx as T, relax as R
 from tvm import relax
 import numpy as np
 ```
@@ -90,18 +90,18 @@ class MatmulBlockModule:
         B: T.Buffer((1024, 1024), "float32"),
         C: T.Buffer((1024, 1024), "float32"),
     ) -> None:
-        T.func_attr({"global_symbol": "main", "tir.noalias": True})
+        T.func_attr({"global_symbol": "main", "tirx.noalias": True})
         for i0, j0, k0 in T.grid(64, 64, 64):
-            with T.block("tmm-16x16"):
+            with T.sblock("tmm-16x16"):
                 vi0, vj0, vk0 = T.axis.remap("SSR", [i0, j0, k0])
                 with T.init():
                     for i1, j1 in T.grid(16, 16):
-                        with T.block("tmm_init"):
+                        with T.sblock("tmm_init"):
                             vi1, vj1 = T.axis.remap("SS", [i1, j1])
                             C[vi0 * 16 + vi1, vj0 * 16 + vj1] = T.float32(0)
                 
                 for i1, j1, k1 in T.grid(16, 16, 16):
-                    with T.block("tmm"):
+                    with T.sblock("tmm"):
                         vi1, vj1, vk1 = T.axis.remap("SSR", [i1, j1, k1])
                         C[vi0 *16 + vi1, vj0 * 16 + vj1] += \
                             A[vi0 * 16 + vi1, vk0 * 16 + vk1] * B[vj0 * 16 + vj1, vk0 * 16 + vk1]
@@ -114,7 +114,7 @@ MatmulBlockModule.show()
 我们进一步观察下面这个 block：
 
 ```python
-with T.block("tmm-16x16"):
+with T.sblock("tmm-16x16"):
     T.reads(A[vi0 * 16 : vi0 * 16 + 16, vk0 * 16 : vk0 * 16 + 16], B[vj0 * 16 : vj0 * 16 + 16, vk0 * 16 : vk0 * 16 + 16])
     T.writes(C[vi0 * 16 : vi0 * 16 + 16, vj0 * 16 : vj0 * 16 + 16])
     ...
@@ -140,9 +140,9 @@ np.testing.assert_allclose(c_nd.numpy(), c_tmm, rtol=1e-5)
 我们在这里可以做的一件事是变换张量计算 block 周围的循环。这些循环变换可以帮助我们重新组织周围的迭代方式，从而使得不同张量程序变体成为可能。
 
 ```{.python .input}
-sch = tvm.tir.Schedule(MatmulBlockModule)
+sch = tvm.s_tir.Schedule(MatmulBlockModule)
 
-block_mm = sch.get_block("tmm-16x16")
+block_mm = sch.get_sblock("tmm-16x16")
 i, j, k = sch.get_loops(block_mm)
 
 i0, i1 = sch.split(i, [None, 4])
@@ -164,9 +164,9 @@ class MatmulModule:
         B: T.Buffer((1024, 1024), "float32"),
         C: T.Buffer((1024, 1024), "float32"),
     ) -> None:
-        T.func_attr({"global_symbol": "main", "tir.noalias": True})
+        T.func_attr({"global_symbol": "main", "tirx.noalias": True})
         for i, j, k in T.grid(1024, 1024, 1024):
-            with T.block("matmul"):
+            with T.sblock("matmul"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     C[vi, vj] = T.float32(0)
@@ -174,7 +174,7 @@ class MatmulModule:
 ```
 
 ```{.python .input}
-sch = tvm.tir.Schedule(MatmulModule)
+sch = tvm.s_tir.Schedule(MatmulModule)
 i, j, k = sch.get_loops("matmul")
 i, ii = sch.split(i, factors=[None, 16])
 j, ji = sch.split(j, factors=[None, 16])
@@ -224,11 +224,11 @@ def tmm16_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
     B = T.match_buffer(b, (16, 16), "float32", offset_factor=16, scope="global.B_reg")
     C = T.match_buffer(c, (16, 16), "float32", offset_factor=16,  scope="global.accumulator")
 
-    with T.block("root"):
+    with T.sblock("root"):
         T.reads(C[0:16, 0:16], A[0:16, 0:16], B[0:16, 0:16])
         T.writes(C[0:16, 0:16])
         for i, j, k in T.grid(16, 16, 16):
-            with T.block(""):
+            with T.sblock(""):
                 vii, vjj, vkk = T.axis.remap("SSR", [i, j, k])
                 C[vii, vjj] = C[vii, vjj] + A[vii, vkk] * B[vjj, vkk]
 
@@ -242,7 +242,7 @@ def tmm16_impl(a: T.handle, b: T.handle, c: T.handle) -> None:
     B = T.match_buffer(b, (16, 16), "float32", offset_factor=16, strides=[sb, 1], scope="global.B_reg")
     C = T.match_buffer(c, (16, 16), "float32", offset_factor=16, strides=[sc, 1], scope="global.accumulator")
 
-    with T.block("root"):
+    with T.sblock("root"):
         T.reads(C[0:16, 0:16], A[0:16, 0:16], B[0:16, 0:16])
         T.writes(C[0:16, 0:16])
         T.evaluate(
@@ -258,7 +258,7 @@ def tmm16_impl(a: T.handle, b: T.handle, c: T.handle) -> None:
             )
         )
 
-tvm.tir.TensorIntrin.register("tmm16", tmm16_desc, tmm16_impl)
+tvm.s_tir.TensorIntrin.register("tmm16", tmm16_desc, tmm16_impl)
 ```
 
 作为准备步骤，我们首先将归约分解为一个初始化 block 和一个更新 block。

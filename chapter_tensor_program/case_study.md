@@ -28,7 +28,7 @@ python -m pip install --pre -U -f https://mlc.ai/wheels mlc-ai-nightly-cpu
 ```{.python .input n=0}
 import tvm
 from tvm.ir.module import IRModule
-from tvm.script import tir as T
+from tvm.script import tirx as T
 import numpy as np
 ```
 
@@ -101,10 +101,10 @@ class MyModule:
     def mm_relu(A: T.Buffer((128, 128), "float32"),
                 B: T.Buffer((128, 128), "float32"),
                 C: T.Buffer((128, 128), "float32")):
-        T.func_attr({"global_symbol": "mm_relu", "tir.noalias": True})
+        T.func_attr({"global_symbol": "mm_relu", "tirx.noalias": True})
         Y = T.alloc_buffer((128, 128), dtype="float32")
         for i, j, k in T.grid(128, 128, 128):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi = T.axis.spatial(128, i)
                 vj = T.axis.spatial(128, j)
                 vk = T.axis.reduce(128, k)
@@ -112,7 +112,7 @@ class MyModule:
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + A[vi, vk] * B[vk, vj]
         for i, j in T.grid(128, 128):
-            with T.block("C"):
+            with T.sblock("C"):
                 vi = T.axis.spatial(128, i)
                 vj = T.axis.spatial(128, j)
                 C[vi, vj] = T.max(Y[vi, vj], T.float32(0))
@@ -165,11 +165,11 @@ for i in range(128):
 
 #### 计算块
 
-主要区别之一来自计算语句。TensorIR 包含一个名为 `T.block` 的额外结构。
+主要区别之一来自计算语句。TensorIR 包含一个名为 `T.sblock` 的额外结构。
 
 ```python
 # TensorIR
-with T.block("Y"):
+with T.sblock("Y"):
     vi = T.axis.spatial(128, i)
     vj = T.axis.spatial(128, j)
     vk = T.axis.reduce(128, k)
@@ -226,7 +226,7 @@ vk = T.axis.reduce(128, k)
 ```python
 # wrong program due to loop and block iteration mismatch
 for i in range(127):
-    with T.block("C"):
+    with T.sblock("C"):
         vi = T.axis.spatial(128, i)
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
         error here due to iterator size mismatch
@@ -261,16 +261,16 @@ class MyModuleWithAxisRemapSugar:
     def mm_relu(A: T.Buffer((128, 128), "float32"),
                 B: T.Buffer((128, 128), "float32"),
                 C: T.Buffer((128, 128), "float32")):
-        T.func_attr({"global_symbol": "mm_relu", "tir.noalias": True})
+        T.func_attr({"global_symbol": "mm_relu", "tirx.noalias": True})
         Y = T.alloc_buffer((128, 128), dtype="float32")
         for i, j, k in T.grid(128, 128, 128):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
                 Y[vi, vj] = Y[vi, vj] + A[vi, vk] * B[vk, vj]
         for i, j in T.grid(128, 128):
-            with T.block("C"):
+            with T.sblock("C"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 C[vi, vj] = T.max(Y[vi, vj], T.float32(0))
 ```
@@ -282,7 +282,7 @@ class MyModuleWithAxisRemapSugar:
 函数属性信息包含关于函数的额外信息。
 
 ```python
-T.func_attr({"global_symbol": "mm_relu", "tir.noalias": True})
+T.func_attr({"global_symbol": "mm_relu", "tirx.noalias": True})
 ```
 
 这里的 `global_symbol` 对应函数名，`tir.noalias` 是一个属性，表示所有的缓冲存储器不重叠。你现在可以放心地跳过这些属性，因为它们不会影响对概念的整体理解。
@@ -308,9 +308,9 @@ class MyModuleWithTwoFunctions:
     def mm(A: T.Buffer((128, 128), "float32"),
            B: T.Buffer((128, 128), "float32"),
            Y: T.Buffer((128, 128), "float32")):
-        T.func_attr({"global_symbol": "mm", "tir.noalias": True})
+        T.func_attr({"global_symbol": "mm", "tirx.noalias": True})
         for i, j, k in T.grid(128, 128, 128):
-            with T.block("Y"):
+            with T.sblock("Y"):
                 vi, vj, vk = T.axis.remap("SSR", [i, j, k])
                 with T.init():
                     Y[vi, vj] = T.float32(0)
@@ -319,9 +319,9 @@ class MyModuleWithTwoFunctions:
     @T.prim_func
     def relu(A: T.Buffer((128, 128), "float32"),
              B: T.Buffer((128, 128), "float32")):
-        T.func_attr({"global_symbol": "relu", "tir.noalias": True})
+        T.func_attr({"global_symbol": "relu", "tirx.noalias": True})
         for i, j in T.grid(128, 128):
-            with T.block("B"):
+            with T.sblock("B"):
                 vi, vj = T.axis.remap("SS", [i, j])
                 B[vi, vj] = T.max(A[vi, vj], T.float32(0))
 ```
@@ -383,13 +383,13 @@ IPython.display.Code(MyModule.script(), language="python")
 现在我们准备好尝试代码变换。我们首先创建一个以给定的 `MyModule` 作为输入的 Schedule 辅助类。
 
 ```{.python .input n=11}
-sch = tvm.tir.Schedule(MyModule)
+sch = tvm.s_tir.Schedule(MyModule)
 ```
 
 然后我们执行以下操作以获得对块 `Y` 和相应循环的引用。
 
 ```{.python .input n=12}
-block_Y = sch.get_block("Y", func_name="mm_relu")
+block_Y = sch.get_sblock("Y", func_name="mm_relu")
 i, j, k = sch.get_loops(block_Y)
 ```
 
@@ -419,7 +419,7 @@ IPython.display.Code(sch.mod.script(), language="python")
 在本节中，我们将继续进行另外两步变换以得到另一个变体。首先，我们使用名为 `reverse_compute_at` 的原语将块 `C` 移动到 `Y` 的内循环里。
 
 ```{.python .input n=16}
-block_C = sch.get_block("C", "mm_relu")
+block_C = sch.get_sblock("C", "mm_relu")
 sch.reverse_compute_at(block_C, j0)
 IPython.display.Code(sch.mod.script(), language="python")
 ```
@@ -544,12 +544,12 @@ IPython.display.Code(sch.mod.script(), language="python")
 
 ```{.python .input n=25}
 def transform(mod, jfactor):
-    sch = tvm.tir.Schedule(mod)
-    block_Y = sch.get_block("Y", func_name="mm_relu")
+    sch = tvm.s_tir.Schedule(mod)
+    block_Y = sch.get_sblock("Y", func_name="mm_relu")
     i, j, k = sch.get_loops(block_Y)
     j0, j1 = sch.split(j, factors=[None, jfactor])
     sch.reorder(j0, k, j1)
-    block_C = sch.get_block("C", "mm_relu")
+    block_C = sch.get_sblock("C", "mm_relu")
     sch.reverse_compute_at(block_C, j0)
     return sch.mod
 
