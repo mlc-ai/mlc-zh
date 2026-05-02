@@ -318,7 +318,7 @@ def from_fx(fx_mod, input_shapes, call_function_map, call_module_map):
                     assert fn_output is None
                     fn_output = bb.emit_output(output)
         # output and finalize the function
-        bb.emit_func_output(output, fn_inputs)
+        bb.emit_func_output(fn_output, fn_inputs)
     return bb.get()
 ```
 
